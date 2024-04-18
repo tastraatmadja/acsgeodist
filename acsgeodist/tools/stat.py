@@ -1,0 +1,80 @@
+import numpy as np
+
+'''
+Weighting function wdecay
+Returns the downweighting factor for normalized deviation z,
+using a modified exponential decay function.
+It effectively gives no weight to data points more than 10-20 sigmas
+from the fitted value (whereas whuber gives significant weight at
+these distances).
+* @author L.Lindegren, Lund Observatory (2004 May 19)
+* @param z double : normalized residual, expected to be approximately N(0,1)
+* @return double : factor by which the statistical weight should be reduced
+'''
+def wdecay(z):
+    if isinstance(z, (list, np.ndarray)):
+        weights = np.zeros(z.size)
+        for i in range(weights.size):
+            weights[i] = wdecay(z[i])
+        return weights.flatten()
+    else:
+        zabs = np.absolute(z)
+
+        if (zabs <= 2.0):
+            return 1.0
+        elif (zabs <= 3.0):
+            t = zabs - 2.0
+            return 1.0 - (1.77373519609519 - 1.14161463726663*t)*t*t;
+        elif (zabs <= 10.0):
+            return np.exp(-zabs/3.0)
+        else:
+            return 0.0
+
+
+def estimateMeanAndCovarianceMatrix(x):
+    ## Use median instead of mean because it is more robust to outlier
+    median = np.nanpercentile(x, 50, axis=0)
+
+    ## Robustly estimate the standard deviations using rescaled 90% credible interval
+    ## of the sample
+    stdDev = 0.5 * (np.nanpercentile(x, 95.0, axis=0) - np.nanpercentile(x, 5.0, axis=0)) / 1.645
+
+    ## Use numpy.cov to estimate the covariance matrix
+    cov = np.cov(x.T)
+
+    ## Only take the correlation coefficients
+    ## corr = cov[0,1] / np.sqrt(cov[0,0]) / np.sqrt(cov[1,1])
+
+    covOut = np.zeros((median.size, median.size))
+
+    np.fill_diagonal(covOut, stdDev ** 2)
+
+    for i in range(median.size):
+        for j in range(i + 1, median.size):
+            corr = cov[i, j] / np.sqrt(cov[i, i]) / np.sqrt(cov[j, j])
+            covOut[i, j] = corr * stdDev[i] * stdDev[j]
+            covOut[j, i] = covOut[i, j]
+    return median, covOut
+
+
+def estimateMeanAndCovarianceMatrixRobust(x, w):
+    sumW = np.sum(w)
+
+    mean = np.average(x, weights=w, axis=0)
+    cov = np.cov(x.T, ddof=0, aweights=w) * sumW / (sumW - 1)
+    ## var  = np.average((x - mean)**2, weights=w, axis=0) * sumW / (sumW - 1)
+
+    ## print(mean)
+    ## print(var, np.sqrt(var))
+    ## print(cov)
+
+    return mean, cov
+
+
+def getMahalanobisDistances(x, mean, invCov):
+    distances = np.zeros((x.shape[0],))
+
+    for i in range(x.shape[0]):
+        distances[i] = distance.mahalanobis(x[i], mean, invCov)
+
+    return distances

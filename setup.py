@@ -2,7 +2,7 @@
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 
 import sys
-from setuptools import setup
+from setuptools import setup, find_packages
 
 TEST_HELP = """
 Note: running tests is no longer done using 'python setup.py test'. Instead
