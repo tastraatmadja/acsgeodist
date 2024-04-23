@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial import distance
 
 '''
 Weighting function wdecay
