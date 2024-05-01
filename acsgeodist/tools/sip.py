@@ -2,6 +2,7 @@
 SIP (Simple Imaging Polynomial) related tools
 '''
 
+from acsgeodist import acsconstants
 import numpy as np
 
 def getUpperTriangularMatrixNumberOfElements(n):
@@ -62,3 +63,22 @@ def getCoeffName(i, j):
         for pp in range(j):
             name += 'Y'
         return name
+
+
+def getCoefficients(df, pOrder):
+    n = pOrder+ 1
+    P = getUpperTriangularMatrixNumberOfElements(n)
+
+    results = np.zeros((acsconstants.NAXIS, P))
+
+    for ii in range(n):
+        for jj in range(n - ii):
+            ppp = getUpperTriangularIndex(jj, ii)
+
+            ## sVal = vanderScalerX[:, ii] * vanderScalerY[:, jj]
+
+            for axis in range(acsconstants.NAXIS):
+                coeffName = '{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], ppp + 1)
+                results[axis, ppp] = df.iloc[0][coeffName]
+
+    return results

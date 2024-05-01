@@ -3,6 +3,8 @@ Created on Apr 13 2024
 
 @author tastraatmadja
 '''
+NAXIS = 2
+
 AXIS_NAMES = [r'$X$', r'$Y$']
 
 COEFF_LABELS = ['A', 'B']
