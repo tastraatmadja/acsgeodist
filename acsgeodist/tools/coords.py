@@ -1,4 +1,5 @@
 from astropy.coordinates import SkyCoord
+from astropy import units as u
 import numpy as np
 
 '''
