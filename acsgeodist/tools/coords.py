@@ -29,6 +29,24 @@ def getRTriad(c):
 
     return np.vstack([+cosDE * cosRA, cosDE * sinRA, sinDE]).transpose()
 
+
+'''
+Given a SkyCoord object and a normal triad pqr0 around a 
+reference point, return the normal coordinates
+'''
+def getNormalCoordinates(c, pqr0):
+    r = getRTriad(c)
+    r0DotR = np.sum(pqr0[2] * r, axis=1)
+
+    ## Normal coordinates in arcsec
+    xi = ((np.sum(pqr0[0] * r, axis=1) / r0DotR) * u.radian).to(u.arcsec)
+    eta = ((np.sum(pqr0[1] * r, axis=1) / r0DotR) * u.radian).to(u.arcsec)
+
+    del r
+    del r0DotR
+
+    return xi, eta
+
 '''
 From normal coordinates (xi, eta), calculate its observed
 celestial coordinates r = {alpha, delta}. The celestial
