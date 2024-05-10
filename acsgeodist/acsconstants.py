@@ -3,6 +3,10 @@ Created on Apr 13 2024
 
 @author tastraatmadja
 '''
+from astropy import units as u
+
+ACS_PLATESCALE = 50.0 * u.mas / u.pix
+
 NAXIS = 2
 
 AXIS_NAMES = [r'$X$', r'$Y$']
