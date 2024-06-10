@@ -786,10 +786,16 @@ class SIPEstimator():
                     ax3[2, axis + 1].set_xlim(resMin, resMax)
                     ax3[axis, 0].set_ylim(resMin, resMax)
 
+                    ax3[axis, 0].axhline(y=0)
+                    ax3[2, axis+1].axvline(x=0)
+
                 ax3[1, 1].xaxis.set_major_locator(MultipleLocator(dRes))
                 ax3[1, 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
                 ax3[1, 1].yaxis.set_major_locator(MultipleLocator(dRes))
                 ax3[1, 1].yaxis.set_minor_locator(MultipleLocator(dMRes))
+
+                ax3[1, 1].axvline(x=0)
+                ax3[1, 1].axhline(y=0)
 
                 ax3[2, 0].axhline(linestyle='--', color='r', y=0)
                 ax3[2, 0].axvline(linestyle='--', color='r', x=0)
