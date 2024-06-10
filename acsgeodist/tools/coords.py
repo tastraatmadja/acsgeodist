@@ -77,3 +77,11 @@ def shift_rotate_scale_coords(x, y, sx, sy, px, py, theta):
     xn =  dx * px * np.cos(theta) + dy * px * np.sin(theta)
     yn = -dx * py * np.sin(theta) + dy * py * np.cos(theta)
     return xn, yn
+
+'''
+Given 4 points of a rectangle vertices, calculate the middle point of the rectangle
+'''
+def getRectangleMidpoint(coords):
+    midpoint1 = 0.5 * (coords + np.roll(coords, -1, axis=0))
+    midpoint2 = 0.5 * (midpoint1 + np.roll(midpoint1, -2, axis=0))
+    return midpoint2[0]
