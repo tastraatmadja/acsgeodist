@@ -90,6 +90,8 @@ class SIPEstimator():
             self.dtabs = None
             self.ftabs = None
 
+        self.cross_match = cross_match
+
         if self.cross_match:
             Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
             Gaia.ROW_LIMIT = -1
@@ -774,23 +776,24 @@ class SIPEstimator():
                 ## Based on the equatorial coordinates assign a source ID for each source
                 hst1pass['sourceID'][argsel] = astro.generateSourceID(c)
 
-                ## Now we query the Gaia catalogue. For this we will have different criteria than before. We now only
-                ## cross-match sources with 0 < q <= Q_MAX, for these are more likely to be bona-fide point-sources
-                ## (i.e. stars).
-                argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta) & (hst1pass['q'] > Q_MIN) & (hst1pass['q'] <= Q_MAX)).flatten()
+                ## Now we query the Gaia catalogue, if cross_match is set to True. For this we will have different
+                ## criteria than before. We now only cross-match sources with 0 < q <= Q_MAX, for these are more likely
+                ## to be bona-fide point-sources (i.e. stars).
+                if self.cross_match:
+                    argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta) & (hst1pass['q'] > Q_MIN) & (hst1pass['q'] <= Q_MAX)).flatten()
 
-                c = SkyCoord(ra=hst1pass['alpha'][argsel] * u.deg, dec=hst1pass['delta'][argsel] * u.deg, frame='icrs')
+                    c = SkyCoord(ra=hst1pass['alpha'][argsel] * u.deg, dec=hst1pass['delta'][argsel] * u.deg, frame='icrs')
 
-                self.c_gdr3 = self.c_gdr3.apply_space_motion(t_acs)
+                    self.c_gdr3 = self.c_gdr3.apply_space_motion(t_acs)
 
-                idx, sep, _ = c.match_to_catalog_sky(self.c_gdr3)
+                    idx, sep, _ = c.match_to_catalog_sky(self.c_gdr3)
 
-                sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
+                    sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
 
-                selection_gdr3 = sep_pix < MAX_SEP
+                    selection_gdr3 = sep_pix < MAX_SEP
 
-                ## We now assign a different source ID for sources with known GDR3 stars counterpart
-                hst1pass['sourceID'][argsel[selection_gdr3]] = self.gdr3_id[idx[selection_gdr3]]
+                    ## We now assign a different source ID for sources with known GDR3 stars counterpart
+                    hst1pass['sourceID'][argsel[selection_gdr3]] = self.gdr3_id[idx[selection_gdr3]]
 
                 ## Write the final table
                 hst1pass.write(outTableFilename, overwrite=True)
