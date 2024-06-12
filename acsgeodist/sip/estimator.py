@@ -23,9 +23,10 @@ import time
 
 NAXIS = acsconstants.NAXIS
 
-Q_MAX = 0.5
-
-MAX_SEP = 5.0 * u.pix
+## Cross-matching parameters
+Q_MIN   = 1.e-6
+Q_MAX   = 1.0
+MAX_SEP = 3.0 * u.pix
 
 chips = np.array([1, 2], dtype=int) ## hdu [SCI, x]
 X0    = 2048.00
@@ -753,7 +754,7 @@ class SIPEstimator():
                 ## Now we query the Gaia catalogue. For this we will have different criteria than before. We now only
                 ## cross-match sources with 0 < q <= Q_MAX, for these are more likely to be bona-fide point-sources
                 ## (i.e. stars).
-                argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta) & (hst1pass['q'] > 0) & (hst1pass['q'] <= Q_MAX)).flatten()
+                argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta) & (hst1pass['q'] > Q_MIN) & (hst1pass['q'] <= Q_MAX)).flatten()
 
                 c = SkyCoord(ra=hst1pass['alpha'][argsel] * u.deg, dec=hst1pass['delta'][argsel] * u.deg, frame='icrs')
 
