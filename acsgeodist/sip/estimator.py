@@ -27,6 +27,12 @@ NAXIS = acsconstants.NAXIS
 Q_MIN   = 1.e-6
 Q_MAX   = 1.0
 MAX_SEP = 3.0 * u.pix
+HEIGHT  = 0.5 * u.deg
+WIDTH   = HEIGHT
+
+## For cross-matching, select only Gaia sources with good astrometry measurements
+MIN_RUWE = 0.8
+MAX_RUWE = 1.2
 
 chips = np.array([1, 2], dtype=int) ## hdu [SCI, x]
 X0    = 2048.00
@@ -57,7 +63,7 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 
 class SIPEstimator():
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
-                 min_n_refstar=100, make_lithographic_and_filter_mask_corrections=True):
+                 min_n_refstar=100, make_lithographic_and_filter_mask_corrections=True, cross_match=True):
         self.refCat        = referenceCatalog
         self.wcsRef        = referenceWCS
         self.tRef0         = tRef0
@@ -65,6 +71,8 @@ class SIPEstimator():
         self.min_n_app     = min_n_app
         self.max_pix_tol   = max_pix_tol
         self.min_n_refstar = min_n_refstar
+        self.alpha0        = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
+        self.delta0        = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
 
         self.make_lithographic_and_filter_mask_corrections = make_lithographic_and_filter_mask_corrections
 
@@ -81,6 +89,24 @@ class SIPEstimator():
         else:
             self.dtabs = None
             self.ftabs = None
+
+        if self.cross_match:
+            Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
+            Gaia.ROW_LIMIT = -1
+
+            coord = SkyCoord(ra=self.alpha0, dec=self.delta0, frame='icrs')
+
+            g = Gaia.query_object_async(coordinate=coord, width=WIDTH, height=HEIGHT)
+
+            gaia_selection = (g['ruwe'] >= MIN_RUWE) & (g['ruwe'] <= MAX_RUWE)
+
+            g = g[gaia_selection]
+
+            self.gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+
+            self.c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
+                              pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
+                              obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
 
     def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, outDir='.', **kwargs):
         addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
@@ -732,11 +758,8 @@ class SIPEstimator():
                 xi  = (hst1pass['xi']  * u.pix) * acsconstants.ACS_PLATESCALE
                 eta = (hst1pass['eta'] * u.pix) * acsconstants.ACS_PLATESCALE
 
-                ## Retrieve the zero-point of the reference catalogue and declare a SkyCoord object from zero-point.
-                alpha0 = float(self.wcsRef.to_header()['CRVAL1'])
-                delta0 = float(self.wcsRef.to_header()['CRVAL2'])
-
-                c0 = SkyCoord(ra=alpha0 * u.deg, dec=delta0 * u.deg, frame='icrs')
+                ## Use the zero-point of the reference catalogue and declare a SkyCoord object from zero-point.
+                c0 = SkyCoord(ra=self.alpha0, dec=self.delta0, frame='icrs')
 
                 ## Find only sources with defined xi and eta. Don't worry if they're crap sources, we'll deal with them
                 ## later in the next phase
@@ -758,48 +781,16 @@ class SIPEstimator():
 
                 c = SkyCoord(ra=hst1pass['alpha'][argsel] * u.deg, dec=hst1pass['delta'][argsel] * u.deg, frame='icrs')
 
-                raMin = np.nanmin(c.ra)
-                raMax = np.nanmax(c.ra)
+                self.c_gdr3 = self.c_gdr3.apply_space_motion(t_acs)
 
-                deMin = np.nanmin(c.dec)
-                deMax = np.nanmax(c.dec)
-
-                raMid = 0.5 * (raMin + raMax)
-                deMid = 0.5 * (deMin + deMax)
-
-                width  = raMax - raMin
-                height = deMax - deMin
-
-                Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
-                Gaia.ROW_LIMIT = -1
-
-                coord = SkyCoord(ra=raMid, dec=deMid, frame='icrs')
-
-                g = Gaia.query_object_async(coordinate=coord, width=width, height=height)
-
-                ## Select only Gaia sources with good astrometry measurements
-                minRUWE = 0.8
-                maxRUWE = 1.2
-
-                gaia_selection = (g['ruwe'] >= minRUWE) & (g['ruwe'] <= maxRUWE)
-
-                g = g[gaia_selection]
-
-                gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
-
-                c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
-                             pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
-                             obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
-                c_gdr3 = c_gdr3.apply_space_motion(t_acs)
-
-                idx, sep, _ = c.match_to_catalog_sky(c_gdr3)
+                idx, sep, _ = c.match_to_catalog_sky(self.c_gdr3)
 
                 sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
 
                 selection_gdr3 = sep_pix < MAX_SEP
 
                 ## We now assign a different source ID for sources with known GDR3 stars counterpart
-                hst1pass['sourceID'][argsel[selection_gdr3]] = gdr3_id[idx[selection_gdr3]]
+                hst1pass['sourceID'][argsel[selection_gdr3]] = self.gdr3_id[idx[selection_gdr3]]
 
                 ## Write the final table
                 hst1pass.write(outTableFilename, overwrite=True)
