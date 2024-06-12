@@ -23,6 +23,10 @@ import time
 
 NAXIS = acsconstants.NAXIS
 
+Q_MAX = 0.5
+
+MAX_SEP = 5.0 * u.pix
+
 chips = np.array([1, 2], dtype=int) ## hdu [SCI, x]
 X0    = 2048.00
 Y0    = np.array([1024.0, 2048.0+1024.0])
@@ -723,7 +727,7 @@ class SIPEstimator():
 
                 plt.close(fig=fig1)
 
-                ## Assign name for each sources in each chip
+                ## Assign name for each sources in each chip. We first grab the xi, eta from the catalogue.
                 xi  = (hst1pass['xi']  * u.pix) * acsconstants.ACS_PLATESCALE
                 eta = (hst1pass['eta'] * u.pix) * acsconstants.ACS_PLATESCALE
 
@@ -733,7 +737,8 @@ class SIPEstimator():
 
                 c0 = SkyCoord(ra=alpha0 * u.deg, dec=delta0 * u.deg, frame='icrs')
 
-                ## Find only sources with defined xi and eta
+                ## Find only sources with defined xi and eta. Don't worry if they're crap sources, we'll deal with them
+                ## later in the next phase
                 argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta)).flatten()
 
                 ## Calculate the equatorial coordinates and assign them to the table
@@ -745,7 +750,13 @@ class SIPEstimator():
                 ## Based on the equatorial coordinates assign a source ID for each source
                 hst1pass['sourceID'][argsel] = astro.generateSourceID(c)
 
-                ## Now we query Gaia catalogue
+                ## Now we query the Gaia catalogue. For this we will have different criteria than before. We now only
+                ## cross-match sources with 0 < q <= Q_MAX, for these are more likely to be bona-fide point-sources
+                ## (i.e. stars).
+                argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta) & (hst1pass['q'] > 0) & (hst1pass['q'] <= Q_MAX)).flatten()
+
+                c = SkyCoord(ra=hst1pass['alpha'][argsel] * u.deg, dec=hst1pass['delta'][argsel] * u.deg, frame='icrs')
+
                 raMin = np.nanmin(c.ra)
                 raMax = np.nanmax(c.ra)
 
@@ -765,7 +776,7 @@ class SIPEstimator():
 
                 g = Gaia.query_object_async(coordinate=coord, width=width, height=height)
 
-                ## Select the Gaia sources
+                ## Select only Gaia sources with good astrometry measurements
                 minRUWE = 0.8
                 maxRUWE = 1.2
 
@@ -784,8 +795,9 @@ class SIPEstimator():
 
                 sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
 
-                selection_gdr3 = sep_pix < 5.0 * u.pix
+                selection_gdr3 = sep_pix < MAX_SEP
 
+                ## We now assign a different source ID for sources with known GDR3 stars counterpart
                 hst1pass['sourceID'][argsel[selection_gdr3]] = gdr3_id[idx[selection_gdr3]]
 
                 ## Write the final table
@@ -793,6 +805,7 @@ class SIPEstimator():
 
                 print("Final table written to", outTableFilename)
 
+                ## Plot the coordinates and their residuals on a common reference frame
                 xSize3 = 12
                 ySize3 = 1.0075 * xSize3
 
