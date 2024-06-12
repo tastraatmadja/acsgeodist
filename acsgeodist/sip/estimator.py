@@ -1,12 +1,13 @@
 from acsgeodist import acsconstants
-from acsgeodist.tools import coords, litho, plotting, sip, stat
+from acsgeodist.tools import astro, coords, litho, plotting, sip, stat
 from acsgeodist.tools.convertTime import convertTime
 from astropy import table
 from astropy import units as u
-from astropy.coordinates import Angle, SkyCoord
+from astropy.coordinates import Angle, Distance, SkyCoord
 from astropy.io import ascii, fits
 from astropy.time import Time
 from astropy.visualization import ZScaleInterval
+from astroquery.gaia import Gaia
 from copy import deepcopy
 import gc
 from matplotlib.backends.backend_pdf import PdfPages
@@ -151,20 +152,23 @@ class SIPEstimator():
                 delY = hst1pass['yPred'] - hst1pass['yRef']
 
                 ## Change the columns with default values
-                hst1pass['xPred'] = np.nan
-                hst1pass['yPred'] = np.nan
-                hst1pass['xRef'] = np.nan
-                hst1pass['yRef'] = np.nan
-                hst1pass['dx'] = np.nan
-                hst1pass['dy'] = np.nan
+                hst1pass['xPred']    = np.nan
+                hst1pass['yPred']    = np.nan
+                hst1pass['xRef']     = np.nan
+                hst1pass['yRef']     = np.nan
+                hst1pass['dx']       = np.nan
+                hst1pass['dy']       = np.nan
                 hst1pass['retained'] = False
-                hst1pass['weights'] = 0.0  ## Final weights for all detected sources in the chip
-                hst1pass['xi'] = np.nan
-                hst1pass['eta'] = np.nan
-                hst1pass['xiRef'] = np.nan
-                hst1pass['etaRef'] = np.nan
-                hst1pass['resXi'] = np.nan
-                hst1pass['resEta'] = np.nan
+                hst1pass['weights']  = 0.0  ## Final weights for all detected sources in the chip
+                hst1pass['xi']       = np.nan
+                hst1pass['eta']      = np.nan
+                hst1pass['xiRef']    = np.nan
+                hst1pass['etaRef']   = np.nan
+                hst1pass['resXi']    = np.nan
+                hst1pass['resEta']   = np.nan
+                hst1pass['alpha']    = np.nan
+                hst1pass['delta']    = np.nan
+                hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
 
                 textResults = ""
                 for chip in chips:
@@ -719,15 +723,83 @@ class SIPEstimator():
 
                 plt.close(fig=fig1)
 
+                ## Assign name for each sources in each chip
+                xi  = (hst1pass['xi']  * u.pix) * acsconstants.ACS_PLATESCALE
+                eta = (hst1pass['eta'] * u.pix) * acsconstants.ACS_PLATESCALE
+
+                ## Retrieve the zero-point of the reference catalogue and declare a SkyCoord object from zero-point.
+                alpha0 = float(self.wcsRef.to_header()['CRVAL1'])
+                delta0 = float(self.wcsRef.to_header()['CRVAL2'])
+
+                c0 = SkyCoord(ra=alpha0 * u.deg, dec=delta0 * u.deg, frame='icrs')
+
+                ## Find only sources with defined xi and eta
+                argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta)).flatten()
+
+                ## Calculate the equatorial coordinates and assign them to the table
+                c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], c0, frame='icrs')
+
+                hst1pass['alpha'][argsel] = c.ra.value
+                hst1pass['delta'][argsel] = c.dec.value
+
+                ## Based on the equatorial coordinates assign a source ID for each source
+                hst1pass['sourceID'][argsel] = astro.generateSourceID(c)
+
+                ## Now we query Gaia catalogue
+                raMin = np.nanmin(c.ra)
+                raMax = np.nanmax(c.ra)
+
+                deMin = np.nanmin(c.dec)
+                deMax = np.nanmax(c.dec)
+
+                raMid = 0.5 * (raMin + raMax)
+                deMid = 0.5 * (deMin + deMax)
+
+                width  = raMax - raMin
+                height = deMax - deMin
+
+                Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
+                Gaia.ROW_LIMIT = -1
+
+                coord = SkyCoord(ra=raMid, dec=deMid, frame='icrs')
+
+                g = Gaia.query_object_async(coordinate=coord, width=width, height=height)
+
+                ## Select the Gaia sources
+                minRUWE = 0.8
+                maxRUWE = 1.2
+
+                gaia_selection = (g['ruwe'] >= minRUWE) & (g['ruwe'] <= maxRUWE)
+
+                g = g[gaia_selection]
+
+                gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+
+                c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
+                             pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
+                             obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
+                c_gdr3 = c_gdr3.apply_space_motion(t_acs)
+
+                idx, sep, _ = c.match_to_catalog_sky(c_gdr3)
+
+                sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
+
+                selection_gdr3 = sep_pix < 5.0 * u.pix
+
+                hst1pass['sourceID'][argsel[selection_gdr3]] = gdr3_id[idx[selection_gdr3]]
+
                 ## Write the final table
                 hst1pass.write(outTableFilename, overwrite=True)
 
                 print("Final table written to", outTableFilename)
 
                 xSize3 = 12
-                ySize3 = xSize3
+                ySize3 = 1.0075 * xSize3
 
-                dX3, dMX3 = 1000, 200
+                xMin3, xMax3 = -5500, +5500
+                yMin3, yMax3 = xMin3, xMax3
+
+                dX3, dMX3 = 2000, 500
                 dY3, dMY3 = dX3, dMX3
 
                 resMin = -0.29
@@ -745,8 +817,6 @@ class SIPEstimator():
                 ax3[0, 1].set_visible(False)
                 ax3[0, 2].set_visible(False)
                 ax3[1, 2].set_visible(False)
-
-                plt.subplots_adjust(wspace=0.0, hspace=0.0)
 
                 print("FINAL RESIDUALS (COMBINED):")
                 df_resids = hst1pass.to_pandas()
@@ -780,14 +850,20 @@ class SIPEstimator():
                     ax3[2, axis + 1].xaxis.set_major_locator(MultipleLocator(dRes))
                     ax3[2, axis + 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
 
+                    ax3[2, axis + 1].yaxis.set_major_locator(MultipleLocator(dY3))
+                    ax3[2, axis + 1].yaxis.set_minor_locator(MultipleLocator(dMY3))
+
+                    ax3[axis, 0].xaxis.set_major_locator(MultipleLocator(dX3))
+                    ax3[axis, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
+
                     ax3[axis, 0].yaxis.set_major_locator(MultipleLocator(dRes))
                     ax3[axis, 0].yaxis.set_minor_locator(MultipleLocator(dMRes))
 
                     ax3[2, axis + 1].set_xlim(resMin, resMax)
                     ax3[axis, 0].set_ylim(resMin, resMax)
 
-                    ax3[axis, 0].axhline(y=0)
-                    ax3[2, axis+1].axvline(x=0)
+                    ax3[axis, 0].axhline(y=0, linewidth=1)
+                    ax3[2, axis+1].axvline(x=0, linewidth=1)
 
                 ax3[1, 1].xaxis.set_major_locator(MultipleLocator(dRes))
                 ax3[1, 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
@@ -797,8 +873,8 @@ class SIPEstimator():
                 ax3[1, 1].axvline(x=0)
                 ax3[1, 1].axhline(y=0)
 
-                ax3[2, 0].axhline(linestyle='--', color='r', y=0)
-                ax3[2, 0].axvline(linestyle='--', color='r', x=0)
+                ax3[2, 0].axhline(linestyle='--', color='r', y=0, linewidth=1)
+                ax3[2, 0].axvline(linestyle='--', color='r', x=0, linewidth=1)
 
                 ax3[2,0].set_xlabel(r'xi [pix]')
                 ax3[2,0].set_ylabel(r'eta [pix]')
@@ -809,6 +885,15 @@ class SIPEstimator():
 
                     ax3[2,iii].yaxis.set_major_locator(MultipleLocator(dY3))
                     ax3[2,iii].yaxis.set_minor_locator(MultipleLocator(dMY3))
+
+                ax3[2,0].set_xlim(xMin3, xMax3)
+                ax3[2,0].set_ylim(yMin3, yMax3)
+
+                ax3[2,0].set_aspect('equal')
+
+                ax3[2,0].invert_xaxis()
+
+                plt.subplots_adjust(wspace=0.0, hspace=0.0)
 
                 plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_retainedSources_commonCoordinates.pdf".format(outDir, baseImageFilename, pOrder)
 
@@ -873,4 +958,3 @@ class SIPEstimator():
         tab['eta'][selection] = eta.to_value(u.arcsec)
 
         return tab
-
