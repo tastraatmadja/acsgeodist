@@ -83,9 +83,14 @@ def getMahalanobisDistances(x, mean, invCov):
 def getBIC(k, n, chiSq):
     return chiSq + k * np.log(n)
 
-def getLnPMD(k, res, lnPM):
-    chiSq = np.nansum(res**2)
-    return -0.5*getBIC(k, res.size, chiSq) + lnPM
+def getLnPMD(k, res, lnPM, weights=None):
+    if (weights is None):
+        chiSq = np.nansum(res**2)
+        nEff  = float(res.size)
+    else:
+        nEff  = np.nansum(weights)
+        chiSq = np.nansum(weights * res**2)/nEff
+    return -0.5*getBIC(k, nEff, chiSq) + lnPM
 
 def addLnProb(lnP1, lnP2):
     if ((lnP1 > -np.inf) and (lnP2 > -np.inf)):
