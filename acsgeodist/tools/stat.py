@@ -79,3 +79,22 @@ def getMahalanobisDistances(x, mean, invCov):
         distances[i] = distance.mahalanobis(x[i], mean, invCov)
 
     return distances
+
+def getBIC(k, n, chiSq):
+    return chiSq + k * np.log(n)
+
+def getLnPMD(k, res, lnPM):
+    chiSq = np.nansum(res**2)
+    return -0.5*getBIC(k, res.size, chiSq) + lnPM
+
+def addLnProb(lnP1, lnP2):
+    if ((lnP1 > -np.inf) and (lnP2 > -np.inf)):
+        if (lnP1 > lnP2):
+            return lnP1 + np.log1p(np.exp(lnP2 - lnP1))
+        else:
+            return lnP2 + np.log1p(np.exp(lnP1 - lnP2))
+    else:
+        if (lnP1 > lnP2):
+            return lnP1
+        else:
+            return lnP2
