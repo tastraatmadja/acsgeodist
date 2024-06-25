@@ -40,11 +40,10 @@ def generateSourceID(c):
     return ['ACS_{0:018d}'.format(pixId) for pixId in pixIds]
 
 def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None):
-    if (maxNModel > 2):
-        if pqr0 is None:
-            pqr0 = np.zeros((3,3))
-        if site is None:
-            site = EarthLocation.from_geocentric(0.0 * u.m, 0.0 * u.m, 0.0 * u.m)
+    if pqr0 is None:
+        pqr0 = np.zeros((3,3))
+    if site is None:
+        site = EarthLocation.from_geocentric(0.0 * u.m, 0.0 * u.m, 0.0 * u.m)
 
     ## Earth barycentric position at time t
     ebp = get_body_barycentric('earth', t)

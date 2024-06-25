@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.spatial import distance
 
+LN_2PI = np.log(2 * np.pi)
+
 '''
 Weighting function wdecay
 Returns the downweighting factor for normalized deviation z,
@@ -83,13 +85,18 @@ def getMahalanobisDistances(x, mean, invCov):
 def getBIC(k, n, chiSq):
     return chiSq + k * np.log(n)
 
+def getLnLL(res, weights):
+    selection = weights > 0
+    return 0.5 * (-LN_2PI * float(weights[selection].size) +
+            np.nansum(np.log(weights[selection])) - np.nansum(weights * res**2))
+
 def getLnPMD(k, res, lnPM, weights=None):
     if (weights is None):
         chiSq = np.nansum(res**2)
         nEff  = float(res.size)
     else:
-        nEff  = np.nansum(weights)
-        chiSq = np.nansum(weights * res**2)/nEff
+        nEff  = float(weights[weights > 0].size)
+        chiSq = np.nansum(weights * res**2)
     return -0.5*getBIC(k, nEff, chiSq) + lnPM
 
 def addLnProb(lnP1, lnP2):
