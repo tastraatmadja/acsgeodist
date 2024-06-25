@@ -1,6 +1,25 @@
 from astropy import units as u
+from astropy.coordinates import EarthLocation, get_body_barycentric
 import healpy as hp
 import numpy as np
+
+## Astronomical unit (m) IAU 2012
+DAU = 149597870.7e3 * u.m
+
+## Speed of light (m/s)
+CMPS = 299792458.0 * u.m / u.s
+
+## Light time for 1 au (s)
+AULT = DAU / CMPS
+
+## Seconds per day
+DAYSEC = 86400.0 * u.s
+
+## Julian year
+DJY  = 365.25 * u.yr
+
+## Light time for 1 au, Julian years
+AULTY = AULT/DAYSEC/DJY
 
 HP_RESOLUTION = 28
 HP_NSIDES     = 2 ** HP_RESOLUTION
@@ -20,8 +39,24 @@ def generateSourceID(c):
 
     return ['ACS_{0:018d}'.format(pixId) for pixId in pixIds]
 
-def getAstrometricModels(t, t_ref, maxNModel=3):
-    dt = t - t_ref
+def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None):
+    if (maxNModel > 2):
+        if pqr0 is None:
+            pqr0 = np.zeros((3,3))
+        if site is None:
+            site = EarthLocation.from_geocentric(0.0 * u.m, 0.0 * u.m, 0.0 * u.m)
+
+    ## Earth barycentric position at time t
+    ebp = get_body_barycentric('earth', t)
+
+    ## Position and velocity of the observer at site
+    pv  = site.get_gcrs_posvel(t)
+
+    ## Barycentric position of the observer
+    eb = ebp.xyz.T.to(u.au) + pv[0].xyz.T.to(u.au)
+
+    ## Proper motion time including Roemer's effect
+    dt = (t.tdb.value - t_ref + (eb.to_value(u.au) @ pqr0[2].reshape((3, -1))).flatten() * AULTY.value) * u.yr
 
     nData = 2 * t.size
 
@@ -35,4 +70,8 @@ def getAstrometricModels(t, t_ref, maxNModel=3):
 
             if (model > 0):
                 X[model][axis::2, NAXIS + axis] = dt
+
+                if (model > 1):
+                    X[model][axis::2, 4] = -(eb.to_value(u.au) @ pqr0[axis].reshape((3,-1))).flatten()
+
     return X
