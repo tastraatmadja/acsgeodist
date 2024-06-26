@@ -1,5 +1,8 @@
 from astropy import units as u
-from astropy.coordinates import EarthLocation, get_body_barycentric
+from astropy.coordinates import CartesianRepresentation, EarthLocation, get_body_barycentric
+from astropy.io import fits
+from astropy.time import Time, TimeDelta
+from calcos import orbit
 import healpy as hp
 import numpy as np
 
@@ -39,6 +42,55 @@ def generateSourceID(c):
 
     return ['ACS_{0:018d}'.format(pixId) for pixId in pixIds]
 
+'''
+Given a list of HST SPT and FLC files, return the position and velocity of the telescope at the middle of the exposure.
+Position and Velocity is return as a CartesianRepresentation object. Also return the mid-exposure time in the form of 
+a Time object.
+'''
+def getHSTPosVelTime(sptFiles, dataFiles):
+    x = []
+    y = []
+    z = []
+
+    v_x = []
+    v_y = []
+    v_z = []
+
+    times = []
+    for sptFile, dataFile in zip(sptFiles, dataFiles):
+        orb = orbit.HSTOrbit(sptFile)
+        hdu = fits.open(dataFile)
+
+        expStart = Time(hdu[0].header['EXPSTART'], format='mjd')
+        expTime  = hdu[0].header['EXPTIME']
+        timeMid  = expStart + TimeDelta(0.5 * expTime, format='sec')
+
+        times.append(timeMid.mjd)
+
+        (rect_hst, vel_hst) = orb.getPos(timeMid.mjd)
+
+        x.append(rect_hst[0])
+        y.append(rect_hst[1])
+        z.append(rect_hst[2])
+
+        v_x.append(vel_hst[0])
+        v_y.append(vel_hst[1])
+        v_z.append(vel_hst[2])
+
+    x = np.array(x)
+    y = np.array(y)
+    z = np.array(z)
+
+    v_x = np.array(v_x)
+    v_y = np.array(v_y)
+    v_z = np.array(v_z)
+
+    times = np.array(times)
+
+    pv = (CartesianRepresentation(x, y, z, unit=u.km), CartesianRepresentation(v_x, v_y, v_z, unit=u.km / u.s))
+    t  = Time(times, scale='ut1', format='mjd')
+    return pv, t
+
 def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None, pv=None):
     if pqr0 is None:
         pqr0 = np.zeros((3,3))
@@ -56,7 +108,7 @@ def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None, pv=None):
     eb = ebp.xyz.T.to(u.au) + pv[0].xyz.T.to(u.au)
 
     ## Proper motion time including Roemer's effect
-    dt = (t.tdb.value - t_ref + (eb.to_value(u.au) @ pqr0[2].reshape((3, -1))).flatten() * AULTY.value) * u.yr
+    dt = (t.tdb.decimalyear - t_ref + (eb.to_value(u.au) @ pqr0[2].reshape((3, -1))).flatten() * AULTY.value) * u.yr
 
     nData = 2 * t.size
 
