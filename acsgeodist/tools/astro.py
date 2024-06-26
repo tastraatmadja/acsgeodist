@@ -39,7 +39,7 @@ def generateSourceID(c):
 
     return ['ACS_{0:018d}'.format(pixId) for pixId in pixIds]
 
-def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None):
+def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None, pv=None):
     if pqr0 is None:
         pqr0 = np.zeros((3,3))
     if site is None:
@@ -49,7 +49,8 @@ def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None):
     ebp = get_body_barycentric('earth', t)
 
     ## Position and velocity of the observer at site
-    pv  = site.get_gcrs_posvel(t)
+    if pv is None:
+        pv  = site.get_gcrs_posvel(t)
 
     ## Barycentric position of the observer
     eb = ebp.xyz.T.to(u.au) + pv[0].xyz.T.to(u.au)
