@@ -342,7 +342,7 @@ class SIPEstimator():
                             etaPred = np.matmul(X * scalerArray, coeffs[1::2])
 
                             ## Residuals already in pixel and in image axis
-                            residualsXi = xiRef - xiPred
+                            residualsXi  = xiRef - xiPred
                             residualsEta = etaRef - etaPred
 
                             rmsXi = np.sqrt(np.average(residualsXi ** 2, weights=weights))
@@ -674,6 +674,10 @@ class SIPEstimator():
                         print(CDMatrix)
                         print(hst1pass['resXi', 'resEta'][selection].to_pandas().describe())
 
+                    alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
+
+                    xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
+
                     xi0  = float(self.wcsRef.to_header()['CRPIX1']) - xi0[0]
                     eta0 = eta0[0] - float(self.wcsRef.to_header()['CRPIX2'])
 
@@ -695,7 +699,7 @@ class SIPEstimator():
                         baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
                     textResults += " {0:d} {1:d}".format(nIterTotal, nStars)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
-                    textResults += " {0:0.12f} {1:0.12f}".format(c0Im.ra.value, c0Im.dec.value)
+                    textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
                     textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
                                                                                      CDMatrix[1, 1], CDMatrix[0, 2])
                     for coeff in coeffs:
