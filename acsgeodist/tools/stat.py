@@ -61,16 +61,17 @@ def estimateMeanAndCovarianceMatrix(x):
 
 
 def estimateMeanAndCovarianceMatrixRobust(x, w):
-    sumW = np.sum(w)
+    ## Normalize the weights such that they sum to unity
+    w = w / np.sum(w)
 
     mean = np.average(x, weights=w, axis=0)
-    cov = np.cov(x.T, ddof=0, aweights=w) * sumW / (sumW - 1)
+    cov  = np.cov(x.T, ddof=0, aweights=w) / (1.0 - np.sum(w ** 2))
+    ## cov  = np.cov(x.T, ddof=0, aweights=w)
     ## var  = np.average((x - mean)**2, weights=w, axis=0) * sumW / (sumW - 1)
 
     ## print(mean)
     ## print(var, np.sqrt(var))
     ## print(cov)
-
     return mean, cov
 
 
