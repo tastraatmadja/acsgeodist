@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
 import numpy as np
 import os
-import pandas as pd
 from photutils.aperture import CircularAperture
 import seaborn as sns
 from sklearn import linear_model
