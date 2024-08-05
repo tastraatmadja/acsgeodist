@@ -1,6 +1,6 @@
 from acsgeodist import acsconstants
 from acsgeodist.tools import astro, coords, litho, plotting, sip, stat
-from acsgeodist.tools.convertTime import convertTime
+from acsgeodist.tools.time import convertTime
 from astropy import table
 from astropy import units as u
 from astropy.coordinates import Angle, Distance, SkyCoord
@@ -969,3 +969,6 @@ class SIPEstimator():
         tab['eta'][selection] = eta.to_value(u.arcsec)
 
         return tab
+
+class TimeDependentBSplineEstimator():
+    def __init__(self):
