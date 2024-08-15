@@ -63,8 +63,8 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 class SIPEstimator():
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, make_lithographic_and_filter_mask_corrections=True, cross_match=True):
-        self.refCat        = referenceCatalog
-        self.wcsRef        = referenceWCS
+        self.refCat        = deepcopy(referenceCatalog)
+        self.wcsRef        = deepcopy(referenceWCS)
         self.tRef0         = tRef0
         self.qMax          = qMax
         self.min_n_app     = min_n_app
@@ -976,18 +976,21 @@ T_MAX1 = 2007.0720
 T_MIN2 = 2009.4000
 T_MAX2 = 2025.0000
 
-class TimeDependentBSplineEstimator():
-    def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, pOrderIndiv, pOrder, kOrder, nKnots, minTExp=99.0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
-                 min_n_refstar=100, make_lithographic_and_filter_mask_corrections=True):
+class TimeDependentBSplineEstimator(SIPEstimator):
+    def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
+                 minTExp=99.0, qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100,
+                 make_lithographic_and_filter_mask_corrections=True, cross_match=True):
+        super.__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
+                       min_n_refstar=min_n_refstar,
+                       make_lithographic_and_filter_mask_corrections=make_lithographic_and_filter_mask_corrections,
+                       cross_match=cross_match)
         self.pOrderIndiv = pOrderIndiv ## Maximum polynomial order that are inferred individually for each image
         self.pOrder      = pOrder      ## Total polynomial orders, including those with time-dependent model
         self.kOrder      = kOrder      ## B-spline order
         self.nKnots      = nKnots      ## Number of knots
-        self.tMin        = T_MIN2
-        self.tMax        = T_MAX2
+        self.tMin        = tMin
+        self.tMax        = tMax
         self.minTExp     = minTExp
-
-        self.make_lithographic_and_filter_mask_corrections = make_lithographic_and_filter_mask_corrections
 
         self.nParsPIndiv = sip.getUpperTriangularMatrixNumberOfElements(self.pOrderIndiv + 1)  ## Number of parameters PER AXIS!
         self.nParsP      = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1)       ## Number of parameters PER AXIS!
@@ -996,20 +999,6 @@ class TimeDependentBSplineEstimator():
         self.tKnot = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
 
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
-
-        if self.make_lithographic_and_filter_mask_corrections:
-            correctionTableDir = os.environ['ACSGEODIST_CONFIG']
-
-            dtab_chip1_path = '{0:s}/wfc1.f606w.64x64.dtab'.format(correctionTableDir)
-            dtab_chip2_path = '{0:s}/wfc2.f606w.64x64.dtab'.format(correctionTableDir)
-            ftab_chip1_path = '{0:s}/wfc1.f606w.64x64.ffftab'.format(correctionTableDir)
-            ftab_chip2_path = '{0:s}/wfc2.f606w.64x64.ffftab'.format(correctionTableDir)
-
-            self.dtabs = [dtab_chip2_path, dtab_chip1_path]
-            self.ftabs = [ftab_chip2_path, ftab_chip1_path]
-        else:
-            self.dtabs = None
-            self.ftabs = None
 
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', **kwargs):
         selectedHST1PassFiles = []
