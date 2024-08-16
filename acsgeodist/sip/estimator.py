@@ -93,7 +93,7 @@ class SIPEstimator():
 
         if self.cross_match:
             Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
-            Gaia.ROW_LIMIT = -1
+            Gaia.ROW_LIMIT       = -1
 
             coord = SkyCoord(ra=self.alpha0, dec=self.delta0, frame='icrs')
 
@@ -980,7 +980,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
                  minTExp=99.0, qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100,
                  make_lithographic_and_filter_mask_corrections=True, cross_match=True):
-        super.__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
+        super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
                        min_n_refstar=min_n_refstar,
                        make_lithographic_and_filter_mask_corrections=make_lithographic_and_filter_mask_corrections,
                        cross_match=cross_match)
@@ -996,8 +996,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.nParsP      = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1)       ## Number of parameters PER AXIS!
         self.nParsK      = self.nKnots + self.kOrder  ## Number of parameters include constant parameter (zero point)
 
-        self.tKnot = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
-
+        self.tKnot  = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
 
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', **kwargs):
