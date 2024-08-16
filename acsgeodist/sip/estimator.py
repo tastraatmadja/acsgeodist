@@ -16,6 +16,7 @@ from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
 import numpy as np
 import os
 from photutils.aperture import CircularAperture
+from scipy import sparse
 import seaborn as sns
 from sklearn import linear_model
 import time
@@ -1187,15 +1188,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 del dcorr
                                 del fcorr
 
-                            Xp, scalerArray = bspline.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
+                            Xp, scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
 
-                            Xkp = np.zeros((Xp.shape[0], nParsK * (nParsP - nParsPIndiv)))
+                            Xkp = np.zeros((Xp.shape[0], self.nParsK * (self.nParsP - self.nParsPIndiv)))
 
-                            for p in range(nParsPIndiv, nParsP):
-                                for k in range(nParsK):
-                                    Xkp[:, (p - nParsPIndiv) * nParsK + k] = Xt[0, k] * Xp[:, p]
+                            for p in range(self.nParsPIndiv, self.nParsP):
+                                for k in range(self.nParsK):
+                                    Xkp[:, (p - self.nParsPIndiv) * self.nParsK + k] = Xt[0, k] * Xp[:, p]
 
-                            XpAll[jjj].append(Xp[:, :nParsPIndiv])
+                            XpAll[jjj].append(Xp[:, :self.nParsPIndiv])
                             XkpAll[jjj].append(sparse.csr_matrix(Xkp, dtype='d'))
 
                             centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
