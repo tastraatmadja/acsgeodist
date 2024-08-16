@@ -1,5 +1,5 @@
 from acsgeodist import acsconstants
-from acsgeodist.tools import astro, coords, litho, plotting, sip, stat
+from acsgeodist.tools import astro, bspline, coords, litho, plotting, sip, stat
 from acsgeodist.tools.time import convertTime
 from astropy import table
 from astropy import units as u
@@ -978,7 +978,7 @@ T_MAX2 = 2025.0000
 
 class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
-                 minTExp=99.0, qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100,
+                 qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100,
                  make_lithographic_and_filter_mask_corrections=True, cross_match=True):
         super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
                        min_n_refstar=min_n_refstar,
@@ -990,7 +990,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.nKnots      = nKnots      ## Number of knots
         self.tMin        = tMin
         self.tMax        = tMax
-        self.minTExp     = minTExp
 
         self.nParsPIndiv = sip.getUpperTriangularMatrixNumberOfElements(self.pOrderIndiv + 1)  ## Number of parameters PER AXIS!
         self.nParsP      = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1)       ## Number of parameters PER AXIS!
@@ -1000,7 +999,63 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
 
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', **kwargs):
-        selectedHST1PassFiles = []
+        nOkay = 0
+        nDataAll = np.zeros(2, dtype=int)
+
+        okayIDs = []
+
+        plateIDAll = []
+
+        tAll = []
+
+        rootnamesAll = []
+
+        xiAll = []
+        etaAll = []
+
+        XpAll = []
+        XkpAll = []
+
+        xyRawAll = []
+
+        dxAll = []
+        dyAll = []
+        rollAll = []
+
+        nDataImages = []
+
+        XtAll = []
+
+        XAll = []
+
+        matchResAll = []
+
+        startTime = time.time()
+
+        for chip in chips:
+            jjj = chip - 1
+
+            plateIDAll.append([])
+            tAll.append([])
+            rootnamesAll.append([])
+
+            xiAll.append([])
+            etaAll.append([])
+
+            XpAll.append([])
+            XkpAll.append([])
+
+            xyRawAll.append([])
+
+            dxAll.append([])
+            dyAll.append([])
+            rollAll.append([])
+
+            nDataImages.append([])
+
+            matchResAll.append([])
+
+            XAll.append([])
 
         for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
             addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
@@ -1012,23 +1067,169 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             if (os.path.exists(imageFilename)) and (os.path.exists(addendumFilename)):
                 hduList = fits.open(imageFilename)
 
-                tExp = float(hduList[0].header['EXPTIME'])
-
                 tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
                 t_acs = Time(tstring, scale='utc', format='fits')
 
-                posTarg1 = float(hduList[0].header['POSTARG1'])
-                posTarg2 = float(hduList[0].header['POSTARG2'])
-
-                posTargResultant = np.sqrt(posTarg1 ** 2 + posTarg2 ** 2)
-
-                if ((t_acs.decimalyear >= self.tMin) and (t_acs.decimalyear <= self.tMax) and (tExp > self.minTExp) and (
-                        posTargResultant <= 0.0)):
+                if ((t_acs.decimalyear >= self.tMin) and (t_acs.decimalyear <= self.tMax)):
+                    print()
                     print(i, os.path.basename(hst1passFile), os.path.basename(addendumFilename), baseImageFilename,
                           rootName)
-                    selectedHST1PassFiles.append(hst1passFile)
 
-        nSelection = len(selectedHST1PassFiles)
+                    pa_v3 = float(hduList[0].header['PA_V3'])
 
-        print("Selected {0:d} HST1Pass files!".format(nSelection))
+                    dt = t_acs.decimalyear - self.tRef0
 
+                    ## We use the observation time, in combination with the proper motions to move
+                    ## the coordinates into the time
+                    self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
+                    self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+
+                    hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+
+                    delX = hst1pass['xPred'] - hst1pass['xRef']
+                    delY = hst1pass['yPred'] - hst1pass['yRef']
+
+                    matchRes = np.sqrt(delX ** 2 + delY ** 2)
+
+                    okays = np.zeros(chips.size, dtype='bool')
+                    nDataBad = np.zeros(chips.size, dtype=int)
+                    for chip in chips:
+                        jjj = chip - 1
+
+                        selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
+                                    hst1pass['q'] <= Q_MAX) & (~np.isnan(hst1pass['nAppearances'])) & (
+                                                hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
+                                                matchRes <= self.max_pix_tol)
+
+                        nDataBad[jjj] = len(hst1pass[selection])
+
+                        if (nDataBad[jjj] > self.min_n_refstar):
+                            okays[jjj] = True
+
+                        print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]),
+                              "N_STARS =", nDataBad[jjj], "OKAY:", okays[jjj])
+
+                    del selection
+                    gc.collect()
+
+                    okayToProceed = np.prod(okays, dtype='bool')
+
+                    print("OKAY TO PROCEED:", okayToProceed)
+
+                    Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
+
+                    if okayToProceed:
+                        nOkay += 1
+
+                        okayIDs.append(i)
+
+                        XtAll.append(Xt)
+
+                        for chip in chips:
+                            jj = 2 - chip
+                            jjj = chip - 1
+
+                            chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1],
+                                                                acsconstants.CHIP_POSITIONS[chip - 1])
+
+                            hdu = hduList['SCI', chip]
+
+                            ## Zero point of the y coordinates.
+                            if (chip == 1):
+                                yzp = 0.0
+                                naxis2 = int(hdu.header['NAXIS2'])
+                            else:
+                                yzp += float(naxis2)
+
+                                naxis2 = int(hdu.header['NAXIS2'])
+
+                            orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
+                            vaFactor = float(hdu.header['VAFACTOR'])
+
+                            selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (
+                                        hst1pass['q'] > 0) & (hst1pass['q'] <= Q_MAX) & (
+                                            ~np.isnan(hst1pass['nAppearances'])) & (
+                                                    hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
+                                                    matchRes <= self.max_pix_tol)
+
+                            refStarIdx = hst1pass[selection]['refCatIndex'].value
+
+                            nData = len(refStarIdx)
+
+                            print("CHIP:", chipTitle, "N_STARS:", nData)
+
+                            nDataAll[jjj] += nData
+
+                            xi  = self.refCat[refStarIdx]['xt'] / vaFactor
+                            eta = self.refCat[refStarIdx]['yt'] / vaFactor
+
+                            XC = hst1pass['X'][selection] - X0
+                            YC = hst1pass['Y'][selection] - Y0[chip - 1]
+
+                            if self.make_lithographic_and_filter_mask_corrections:
+                                dcorr = np.array(litho.interp_dtab_ftab_data(
+                                    self.dtabs[jjj],
+                                    hst1pass['X'][selection].value,
+                                    hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+
+                                fcorr = np.array(litho.interp_dtab_ftab_data(
+                                    self.ftabs[jjj],
+                                    hst1pass['X'][selection].value,
+                                    hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+
+                                ## print(dcorr)
+                                ## print(fcorr)
+
+                                ## Apply the lithographic and filter mask correction
+                                XC -= (dcorr[:, 2] - fcorr[:, 2])
+                                YC -= (dcorr[:, 3] - fcorr[:, 3])
+
+                                del dcorr
+                                del fcorr
+
+                            Xp, scalerArray = bspline.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
+
+                            Xkp = np.zeros((Xp.shape[0], nParsK * (nParsP - nParsPIndiv)))
+
+                            for p in range(nParsPIndiv, nParsP):
+                                for k in range(nParsK):
+                                    Xkp[:, (p - nParsPIndiv) * nParsK + k] = Xt[0, k] * Xp[:, p]
+
+                            XpAll[jjj].append(Xp[:, :nParsPIndiv])
+                            XkpAll[jjj].append(sparse.csr_matrix(Xkp, dtype='d'))
+
+                            centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
+
+                            xiAll[jjj].append(xi)
+                            etaAll[jjj].append(eta)
+
+                            xyRawAll[jjj].append(
+                                np.vstack([hst1pass['X'][selection], hst1pass['Y'][selection] - yzp]).T)
+
+                            plateIDAll[jjj].append(np.full(nData, i, dtype=int))
+
+                            tAll[jjj].append(np.full(nData, t_acs.decimalyear))
+
+                            rootnamesAll[jjj].append(np.full(nData, rootName, dtype=object))
+
+                            dxAll[jjj].append(xi[centerStar])
+                            dyAll[jjj].append(eta[centerStar])
+                            rollAll[jjj].append(np.deg2rad(orientat))
+
+                            matchResAll[jjj].append(np.array([delX[selection], delY[selection]]).T)
+
+                            nDataImages[jjj].append(nData)
+
+                    hduList.close()
+
+                    gc.set_threshold(2, 1, 1)
+                    print('Thresholds:', gc.get_threshold())
+                    print('Counts:', gc.get_count())
+
+                    del hduList
+                    del hst1pass
+                    gc.collect()
+                    print('Counts:', gc.get_count())
+                else:
+                    del hduList
+                    gc.collect()
