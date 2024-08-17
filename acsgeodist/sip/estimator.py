@@ -5,6 +5,7 @@ from astropy import table
 from astropy import units as u
 from astropy.coordinates import Angle, Distance, SkyCoord
 from astropy.io import ascii, fits
+from astropy.table import QTable
 from astropy.time import Time
 from astropy.visualization import ZScaleInterval
 from astroquery.gaia import Gaia
@@ -16,7 +17,7 @@ from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
 import numpy as np
 import os
 from photutils.aperture import CircularAperture
-from scipy import sparse
+from scipy import linalg, sparse
 import seaborn as sns
 from sklearn import linear_model
 import time
@@ -1277,18 +1278,18 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         nImages = nOkay
 
-        print("N_PARS_P = {0:d} (P_ORDER = {1:d})".format(nParsP, pOrder))
-        print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(nParsK, kOrder, nKnots))
+        print("N_PARS_P = {0:d} (P_ORDER = {1:d})".format(self.nParsP, self.pOrder))
+        print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
 
-        P = nImages * nParsPIndiv + (nParsP - nParsPIndiv) * nParsK
+        P = nImages * self.nParsPIndiv + (self.nParsP - self.nParsPIndiv) * self.nParsK
 
         print("P = {0:d}".format(P))
         print("N =", nDataAll)
 
         scalerArrayAll = np.zeros(P)
 
-        scalerArrayAll[:nImages * nParsPIndiv] = np.tile(scalerArray[:nParsPIndiv], nImages)
-        scalerArrayAll[nImages * nParsPIndiv:] = np.repeat(scalerArray[nParsPIndiv:], nParsK)
+        scalerArrayAll[:nImages * self.nParsPIndiv]  = np.tile(scalerArray[:self.nParsPIndiv], nImages)
+        scalerArrayAll[nImages  * self.nParsPIndiv:] = np.repeat(scalerArray[self.nParsPIndiv:], self.nParsK)
 
         N_ITER_OUTER = 10
         N_ITER_INNER = 100
@@ -1355,21 +1356,21 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 nSelection = selection[selection].size
 
-                mean, cov = estimateMeanAndCovarianceMatrixRobust(residuals[selection], np.ones(nSelection))
+                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals[selection], np.ones(nSelection))
 
-                weights[selection] = wdecay(getMahalanobisDistances(residuals[selection], mean, np.linalg.inv(cov)))
+                weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection], mean, np.linalg.inv(cov)))
 
             previousWeightSum = np.sum(weights)
 
             nIterTotal = 0
 
             plotFilename1 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualDistribution.pdf".format(
-                OUTDIR, chip, pOrder, kOrder, nKnots)
+                outDir, chip, self.pOrder, self.kOrder, self.nKnots)
 
             pp1 = PdfPages(plotFilename1)
 
             plotFilename2 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualsXY.pdf".format(
-                OUTDIR, chip, pOrder, kOrder, nKnots)
+                outDir, chip, self.pOrder, self.kOrder, self.nKnots)
 
             pp2 = PdfPages(plotFilename2)
 
@@ -1383,8 +1384,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     selection = plateID == j
 
-                    xiRef[selection], etaRef[selection] = shift_rotate_coords(xiRef[selection], etaRef[selection], sx,
-                                                                              sy, roll)
+                    xiRef[selection], etaRef[selection] = coords.shift_rotate_coords(xiRef[selection],
+                                                                                     etaRef[selection],
+                                                                                     sx, sy, roll)
 
                 for iteration2 in range(N_ITER_INNER):
                     startTime = time.time()
@@ -1421,20 +1423,20 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
                         coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
-                            OUTDIR, chip, pOrder, kOrder, nKnots, iteration + 1, iteration2 + 1)
+                            outDir, chip, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1)
 
                         np.save(coeffsAFilename, coeffsA)
 
                         coeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
-                            OUTDIR, chip, pOrder, kOrder, nKnots, iteration + 1, iteration2 + 1)
+                            outDir, chip, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1)
 
                         np.save(coeffsBFilename, coeffsB)
 
                     ## Residuals already in pixel and in image axis
-                    residualsXi = xiRef - ((X.multiply(scalerArrayAll)) @ coeffsA)
+                    residualsXi  = xiRef  - ((X.multiply(scalerArrayAll)) @ coeffsA)
                     residualsEta = etaRef - ((X.multiply(scalerArrayAll)) @ coeffsB)
 
-                    rmsXi = np.sqrt(np.average(residualsXi ** 2, weights=weights))
+                    rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
                     rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
 
                     residuals = np.vstack([residualsXi, residualsEta]).T
@@ -1446,10 +1448,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         selection = plateID == j
 
-                        mean, cov = estimateMeanAndCovarianceMatrixRobust(residuals[selection], weights[selection])
+                        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals[selection], weights[selection])
 
-                        weights[selection] = wdecay(
-                            getMahalanobisDistances(residuals[selection], mean, np.linalg.inv(cov)))
+                        weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection],
+                                                                                      mean, np.linalg.inv(cov)))
 
                     ## What we now call 'retained' are those stars with full weight
                     retained0 = weights >= 1.0
@@ -1515,9 +1517,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         ax.set_title(
                             '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
-                                                                                                              pOrder,
-                                                                                                              kOrder,
-                                                                                                              nKnots,
+                                                                                                              self.pOrder,
+                                                                                                              self.kOrder,
+                                                                                                              self.nKnots,
                                                                                                               iteration + 1,
                                                                                                               iteration2 + 1))
 
@@ -1605,9 +1607,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         axCommons.set_title(
                             '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
-                                                                                                              pOrder,
-                                                                                                              kOrder,
-                                                                                                              nKnots,
+                                                                                                              self.pOrder,
+                                                                                                              self.kOrder,
+                                                                                                              self.nKnots,
                                                                                                               iteration + 1,
                                                                                                               iteration2 + 1))
 
@@ -1631,15 +1633,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         ## using the new zero-th order coefficients and rotation angle
                         thisP = 2
 
-                        if (thisP <= nParsPIndiv):
-                            end = nImages * nParsPIndiv
+                        if (thisP <= self.nParsPIndiv):
+                            end = nImages * self.nParsPIndiv
 
-                            dxs = coeffsA[0:end:nParsPIndiv]
-                            dys = coeffsB[0:end:nParsPIndiv]
-                            rolls = -np.arctan(coeffsA[thisP:end:nParsPIndiv] / coeffsB[thisP:end:nParsPIndiv])
+                            dxs = coeffsA[0:end:self.nParsPIndiv]
+                            dys = coeffsB[0:end:self.nParsPIndiv]
+                            rolls = -np.arctan(coeffsA[thisP:end:self.nParsPIndiv] / coeffsB[thisP:end:self.nParsPIndiv])
                         else:
-                            start = nImages * nParsPIndiv + (thisP - nParsPIndiv) * nParsK
-                            end = start + nParsK
+                            start = nImages * self.nParsPIndiv + (thisP - self.nParsPIndiv) * self.nParsK
+                            end   = start + self.nParsK
 
                             coeffsA3 = XtAll @ coeffsA[start:end]
                             coeffsB3 = XtAll @ coeffsB[start:end]
@@ -1671,16 +1673,16 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
 
-            coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(OUTDIR,
+            coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
                                                                                                              chip,
-                                                                                                             pOrder,
-                                                                                                             kOrder,
-                                                                                                             nKnots)
-            coeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(OUTDIR,
+                                                                                                             self.pOrder,
+                                                                                                             self.kOrder,
+                                                                                                             self.nKnots)
+            coeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
                                                                                                              chip,
-                                                                                                             pOrder,
-                                                                                                             kOrder,
-                                                                                                             nKnots)
+                                                                                                             self.pOrder,
+                                                                                                             self.kOrder,
+                                                                                                             self.nKnots)
 
             np.save(coeffsAFilename, coeffsA)
             np.save(coeffsBFilename, coeffsB)
@@ -1691,11 +1693,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             residualsXi = xiRef - xiPred
             residualsEta = etaRef - etaPred
 
-            outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(OUTDIR,
+            outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(outDir,
                                                                                                              chip,
-                                                                                                             pOrder,
-                                                                                                             kOrder,
-                                                                                                             nKnots)
+                                                                                                             self.pOrder,
+                                                                                                             self.kOrder,
+                                                                                                             self.nKnots)
 
             outTable = QTable(
                 [xyRaw[:, 0], xyRaw[:, 1], xiPred, etaPred, xiRef, etaRef, residualsXi, residualsEta, weights, plateID,
