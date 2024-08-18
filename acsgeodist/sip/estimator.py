@@ -17,7 +17,7 @@ from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
 import numpy as np
 import os
 from photutils.aperture import CircularAperture
-from scipy import linalg, sparse
+from scipy import linalg, signal, sparse
 import seaborn as sns
 from sklearn import linear_model
 import time
@@ -1027,6 +1027,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         nDataImages = []
 
         XtAll = []
+        tObs  = []
 
         XAll = []
 
@@ -1126,6 +1127,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         okayIDs.append(i)
 
                         XtAll.append(Xt)
+                        tObs.append(t_acs.decimalyear)
 
                         for chip in chips:
                             jj = 2 - chip
@@ -1241,6 +1243,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         nDataImages = np.array(nDataImages)
 
         XtAll = np.vstack(XtAll)
+        tObs  = np.array(tObs)
 
         gc.set_threshold(2, 1, 1)
 
@@ -1275,6 +1278,80 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         elapsedTime = time.time() - startTime
         print("READING DATA AND BUILDING DONE! Elapsed time:", convertTime(elapsedTime))
+
+        xSize1 = 12
+        ySize1 = 0.25 * xSize1
+
+        xMin, xMax = np.inf, -np.inf
+        yMin, yMax = 0.0, 1.1
+
+        dY, dMY = 0.5, 0.1
+
+        xLabel2 = r'Time [yr]'
+
+        ## This is the grid of plotting points
+        nPointsGrid = 1001
+
+        tPlot = np.linspace(self.tMin - self.kOrder * self.dtKnot, self.tMax + self.kOrder * self.dtKnot,
+                            nPointsGrid, endpoint=True)
+
+        xMin = min(xMin, self.tMin - self.kOrder * self.dtKnot - 0.25 * self.dtKnot)
+        xMax = max(xMax, self.tMax + self.kOrder * self.dtKnot + 0.25 * self.dtKnot)
+
+        nonZeroSplines = []
+        BSplines = []
+
+        prop_cycle = plt.rcParams['axes.prop_cycle']
+        colors = prop_cycle.by_key()['color']
+
+        knotColors = ['#b2df8a', '#a6cee3']
+
+        fig1 = plt.figure(figsize=(xSize1, ySize1))
+
+        ax1 = fig1.add_subplot(111)
+
+        ## for knot in range(-kOrder, tT.size - 2 * kOrder - 1):
+        for ii in range(self.tKnot.size + self.kOrder - 1):
+            knotID = ii - self.kOrder
+            BSpline = signal.bspline((tPlot - self.tMin) / self.dtKnot - 0.5 * (self.kOrder + 1) - knotID, self.kOrder)
+
+            nonZero = BSpline > 0
+
+            color = colors[ii % len(colors)]
+
+            ax1.plot(tPlot[nonZero], BSpline[nonZero], '-', color=color)
+
+            nonZeroSplines.append(nonZero)
+            BSplines.append(BSpline)
+
+        for ii in range(1, XtAll.shape[1]):
+            nonZero = XtAll[:, ii] > 0
+
+            color = colors[(ii - 1) % len(colors)]
+
+            ax1.plot(tObs[nonZero], XtAll[nonZero, ii], '.', color=color, rasterized=True)
+
+        for ii in range(self.tKnot.size):
+            ax1.axvline(self.tKnot[ii], linewidth=1, linestyle='-', color=knotColors[0])
+
+        ax1.set_xlim(xMin, xMax)
+        ax1.xaxis.set_major_locator(AutoLocator())
+        ax1.xaxis.set_minor_locator(AutoMinorLocator())
+
+        ax1.set_ylim(yMin, yMax)
+        ax1.yaxis.set_major_locator(MultipleLocator(dY))
+        ax1.yaxis.set_minor_locator(MultipleLocator(dMY))
+
+        ax1.set_xlabel(xLabel2);
+        ax1.set_ylabel(r'$B_{i,k}(t)$');
+
+        plotFilename1 = "{0:s}/plot_BSplines_vs_time_kOrder{1:d}.pdf".format(outDir, self.kOrder)
+
+        fig1.savefig(plotFilename1, bbox_inches='tight')
+
+        print("B-Spline plot saved to {0:s}".format(plotFilename1))
+
+        plt.close(fig=fig1)
 
         nImages = nOkay
 
@@ -1321,358 +1398,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         nonFullColor = '#fc8d59'  ## Orange
         discardedColor = 'r'
 
+        startTimeAll = time.time()
         for chip in chips:
-            jjj = chip - 1
-
-            dxs = dxAll[jjj]
-            dys = dyAll[jjj]
-            rolls = rollAll[jjj]
-
-            plateID = plateIDAll[jjj]
-            tObs = tAll[jjj]
-            rootnames = rootnamesAll[jjj]
-
-            X = deepcopy(XAll[jjj])
-
-            ## Initialize the reference coordinates
-            xiRef = deepcopy(xiAll[jjj])
-            etaRef = deepcopy(etaAll[jjj])
-
-            ## Initialize the raw coordinates
-            xyRaw = xyRawAll[jjj]
-
-            ## Initialize the weights using the match residuals
-            ## weights = np.ones(X.shape[0])
-            residuals = matchResAll[jjj]
-
-            ## Use the weights to estimate the mean and covariance matrix of the residual
-            ## distribution. Calculate the mean and covariance matrix for individual exposures,
-            ## as they are time-dependent
-            weights = np.zeros(residuals.shape[0])
-            for i in range(nOkay):
-                j = okayIDs[i]
-
-                selection = plateID == j
-
-                nSelection = selection[selection].size
-
-                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals[selection], np.ones(nSelection))
-
-                weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection], mean, np.linalg.inv(cov)))
-
-            previousWeightSum = np.sum(weights)
-
-            nIterTotal = 0
-
-            plotFilename1 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualDistribution.pdf".format(
-                outDir, chip, self.pOrder, self.kOrder, self.nKnots)
-
-            pp1 = PdfPages(plotFilename1)
-
-            plotFilename2 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualsXY.pdf".format(
-                outDir, chip, self.pOrder, self.kOrder, self.nKnots)
-
-            pp2 = PdfPages(plotFilename2)
-
-            for iteration in range(N_ITER_OUTER):
-                print("OUTER_ITERATION {0:d}, AVERAGE SHIFTS AND ROLL:".format(iteration + 1), np.nanmean(dxs),
-                      np.nanmean(dys), np.nanmean(rolls))
-                for i in range(nOkay):
-                    j = okayIDs[i]
-
-                    sx, sy, roll = dxs[i], dys[i], rolls[i]
-
-                    selection = plateID == j
-
-                    xiRef[selection], etaRef[selection] = coords.shift_rotate_coords(xiRef[selection],
-                                                                                     etaRef[selection],
-                                                                                     sx, sy, roll)
-
-                for iteration2 in range(N_ITER_INNER):
-                    startTime = time.time()
-
-                    nIterTotal += 1
-
-                    nStars = xiRef.size
-
-                    W = sparse.spdiags([weights], 0)
-
-                    A = X.T @ W @ X
-
-                    b_xi = (X.T @ W @ (xiRef / scalerX)).reshape((-1, 1))
-                    b_eta = (X.T @ W @ (etaRef / scalerY)).reshape((-1, 1))
-
-                    coeffsA, res, rnk, s = linalg.lstsq(A.todense(), b_xi, overwrite_a=True, overwrite_b=True)
-
-                    coeffsA = coeffsA.flatten() * scalerX / scalerArrayAll
-
-                    coeffsB, res, rnk, s = linalg.lstsq(A.todense(), b_eta, overwrite_a=True, overwrite_b=True)
-
-                    coeffsB = coeffsB.flatten() * scalerY / scalerArrayAll
-                    '''
-                    reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
-
-                    reg.fit(X, xiRef / scalerX, sample_weight=weights)
-
-                    coeffsA = reg.coef_.flatten() * scalerX / scalerArrayAll
-
-                    reg.fit(X, etaRef / scalerY, sample_weight=weights)
-
-                    coeffsB = reg.coef_.flatten() * scalerY / scalerArrayAll
-                    ''';
-
-                    if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
-                        coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
-                            outDir, chip, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1)
-
-                        np.save(coeffsAFilename, coeffsA)
-
-                        coeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
-                            outDir, chip, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1)
-
-                        np.save(coeffsBFilename, coeffsB)
-
-                    ## Residuals already in pixel and in image axis
-                    residualsXi  = xiRef  - ((X.multiply(scalerArrayAll)) @ coeffsA)
-                    residualsEta = etaRef - ((X.multiply(scalerArrayAll)) @ coeffsB)
-
-                    rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
-                    rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
-
-                    residuals = np.vstack([residualsXi, residualsEta]).T
-
-                    ## Use the weights to estimate the mean and covariance matrix of the residual
-                    ## distribution
-                    for i in range(nOkay):
-                        j = okayIDs[i]
-
-                        selection = plateID == j
-
-                        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals[selection], weights[selection])
-
-                        weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection],
-                                                                                      mean, np.linalg.inv(cov)))
-
-                    ## What we now call 'retained' are those stars with full weight
-                    retained0 = weights >= 1.0
-
-                    ## We have non-full weight stars but non-zero weights
-                    nonFull = (~retained0) & (weights > 0)
-
-                    ## Finally those stars with zero weights
-                    rejected = weights <= 0
-
-                    weightSum = np.sum(weights)
-
-                    weightSumDiff = np.abs(weightSum - previousWeightSum) / weightSum
-
-                    ## Assign the current weight summation for the next iteration
-                    previousWeightSum = weightSum
-
-                    elapsedTime = time.time() - startTime
-
-                    print(chip, iteration + 1, iteration2 + 1,
-                          "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (xiAll[jjj].size)),
-                          "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum),
-                          "Elapsed time: {0}".format(convertTime(elapsedTime)))
-
-                    if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
-                        xSize = 8
-                        ySize = xSize
-
-                        fig = plt.figure(figsize=(xSize, ySize), rasterized=True)
-
-                        ax = fig.add_subplot(111)
-
-                        ax.plot(residuals[rejected][:, 0], residuals[rejected][:, 1], '.', markersize=markerSize,
-                                label=r'$w = 0$', color=discardedColor, rasterized=True)
-                        ax.plot(residuals[nonFull][:, 0], residuals[nonFull][:, 1], '.', markersize=markerSize,
-                                label=r'$0 < w < 1$', color=nonFullColor, rasterized=True)
-                        ax.plot(residuals[retained0][:, 0], residuals[retained0][:, 1], '.', markersize=markerSize,
-                                label=r'$w = 1$', color=retainedColor, rasterized=True)
-
-                        ax.axhline()
-                        ax.axvline()
-
-                        xMin1, xMax1 = ax.get_xlim()
-                        yMin1, yMax1 = ax.get_ylim()
-
-                        maxRange = np.nanmax(np.abs(np.array([xMin1, xMax1, yMin1, yMax1])))
-
-                        ax.set_xlim(-maxRange, +maxRange)
-                        ax.set_ylim(-maxRange, +maxRange)
-
-                        ax.set_aspect('equal')
-
-                        ax.set_xlabel(r'$\Delta X$ [pix]')
-                        ax.set_ylabel(r'$\Delta Y$ [pix]')
-
-                        ax.xaxis.set_major_locator(AutoLocator())
-                        ax.xaxis.set_minor_locator(AutoMinorLocator())
-
-                        ax.yaxis.set_major_locator(AutoLocator())
-                        ax.yaxis.set_minor_locator(AutoMinorLocator())
-
-                        ax.legend(frameon=True)
-
-                        ax.set_title(
-                            '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
-                                                                                                              self.pOrder,
-                                                                                                              self.kOrder,
-                                                                                                              self.nKnots,
-                                                                                                              iteration + 1,
-                                                                                                              iteration2 + 1))
-
-                        pp1.savefig(fig)
-
-                        plt.close(fig=fig)
-
-                        fig2, axes2 = plt.subplots(figsize=(xSize2, ySize2), nrows=nRows2, ncols=nCols2,
-                                                   rasterized=True)
-
-                        xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
-                        yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
-
-                        XY0 = np.array([X0, Y0[0]])
-
-                        xMin = np.array([0, 0])
-                        xMax = np.array([4096, 2048])
-
-                        yMin = +np.inf
-                        yMax = -np.inf
-
-                        for axis1 in range(NAXIS):
-                            for axis2 in range(NAXIS):
-                                coordinatesDiscarded = xyRaw[rejected][:, axis2]
-                                residualsDiscarded = residuals[rejected][:, axis1]
-
-                                coordinatesNonFull = xyRaw[nonFull][:, axis2]
-                                residualsNonFull = residuals[nonFull][:, axis1]
-
-                                coordinatesRetained = xyRaw[retained0][:, axis2]
-                                residualsRetained = residuals[retained0][:, axis1]
-
-                                mean = np.nanmean(residuals[retained0][:, axis1])
-                                stdDev = np.nanstd(residuals[retained0][:, axis1])
-
-                                axes2[axis1, axis2].plot(coordinatesDiscarded, residualsDiscarded, '.',
-                                                         markersize=markerSize, zorder=1, label=r'$w = 0$',
-                                                         color=discardedColor, rasterized=True)
-                                axes2[axis1, axis2].plot(coordinatesNonFull, residualsNonFull, '.',
-                                                         markersize=markerSize, zorder=1, label=r'$0 < w < 1$',
-                                                         color=nonFullColor, rasterized=True)
-                                axes2[axis1, axis2].plot(coordinatesRetained, residualsRetained, '.',
-                                                         markersize=markerSize, zorder=1, label=r'$w = 1$',
-                                                         color=retainedColor, rasterized=True)
-
-                                axes2[axis1, axis2].axhline(0,
-                                                            color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
-                                                            linestyle='--', zorder=2)
-
-                                axes2[axis1, axis2].axhline(mean, color='r', linestyle='-', zorder=3)
-
-                                ## xMin, xMax = axes2[axis1,axis2].get_xlim()
-
-                                resMin = mean - stdDev
-                                resMax = mean + stdDev
-
-                                yMin = np.nanmin(np.array([yMin, mean - 5.0 * stdDev, np.nanmin(residuals)]))
-                                yMax = np.nanmax(np.array([yMax, mean + 5.0 * stdDev, np.nanmax(residuals)]))
-
-                                axes2[axis1, axis2].fill_between([xMin[axis2], xMax[axis2]], [resMin, resMin],
-                                                                 y2=[resMax, resMax], alpha=0.2, zorder=3)
-
-                                axes2[axis1, axis2].set_xlabel(xLabels[axis2])
-                                axes2[axis1, axis2].set_ylabel(yLabels[axis1])
-
-                                axes2[axis1, axis2].xaxis.set_major_locator(MultipleLocator(dX))
-                                axes2[axis1, axis2].xaxis.set_minor_locator(MultipleLocator(dMX))
-
-                                axes2[axis1, axis2].yaxis.set_major_locator(AutoLocator())
-                                axes2[axis1, axis2].yaxis.set_minor_locator(AutoMinorLocator())
-
-                                axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
-
-                        ## print("Y_MIN:", yMin, "Y_MAX:", yMax)
-
-                        yMaxMin = np.nanmax(np.abs(np.array([yMin, yMax])))
-
-                        for axis1 in range(NAXIS):
-                            for axis2 in range(NAXIS):
-                                axes2[axis1, axis2].set_ylim([-yMaxMin, +yMaxMin])
-
-                        ## axes2[0,0].legend()
-
-                        axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
-
-                        axCommons.set_title(
-                            '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
-                                                                                                              self.pOrder,
-                                                                                                              self.kOrder,
-                                                                                                              self.nKnots,
-                                                                                                              iteration + 1,
-                                                                                                              iteration2 + 1))
-
-                        plt.subplots_adjust(wspace=0.25, hspace=0.3)
-
-                        pp2.savefig(fig2, bbox_inches='tight', dpi=300)
-
-                        plt.close(fig=fig2)
-
-                    gc.set_threshold(2, 1, 1)
-
-                    del residualsXi
-                    del residualsEta
-                    del residuals
-                    gc.collect()
-
-                    ## At the last iteration, re-calculate the shift and rolls
-                    ## if ((iteration2+1) == (N_ITER_INNER)):
-                    if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
-                        ## Find the shift and rotation of the reference coordinates
-                        ## using the new zero-th order coefficients and rotation angle
-                        thisP = 2
-
-                        if (thisP <= self.nParsPIndiv):
-                            end = nImages * self.nParsPIndiv
-
-                            dxs = coeffsA[0:end:self.nParsPIndiv]
-                            dys = coeffsB[0:end:self.nParsPIndiv]
-                            rolls = -np.arctan(coeffsA[thisP:end:self.nParsPIndiv] / coeffsB[thisP:end:self.nParsPIndiv])
-                        else:
-                            start = nImages * self.nParsPIndiv + (thisP - self.nParsPIndiv) * self.nParsK
-                            end   = start + self.nParsK
-
-                            coeffsA3 = XtAll @ coeffsA[start:end]
-                            coeffsB3 = XtAll @ coeffsB[start:end]
-
-                            dxs = coeffsA[:nImages]
-                            dys = coeffsB[:nImages]
-                            rolls = -np.arctan(coeffsA3 / coeffsB3)
-
-                        break
-                    else:
-                        X = X[~rejected]
-
-                        weights = weights[~rejected]
-
-                        xiRef = xiRef[~rejected]
-                        etaRef = etaRef[~rejected]
-
-                        xyRaw = xyRaw[~rejected]
-
-                        plateID = plateID[~rejected]
-                        tObs = tObs[~rejected]
-                        rootnames = rootnames[~rejected]
-
-            pp1.close()
-
-            print("Residual 2d distribution plots saved to {0:s}".format(plotFilename1))
-
-            pp2.close()
-
-            print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
-
             coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
                                                                                                              chip,
                                                                                                              self.pOrder,
@@ -1684,27 +1411,380 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                                                              self.kOrder,
                                                                                                              self.nKnots)
 
-            np.save(coeffsAFilename, coeffsA)
-            np.save(coeffsBFilename, coeffsB)
+            if (not os.path.exists(coeffsAFilename)) or (not os.path.exists(coeffsBFilename )):
+                jjj = chip - 1
 
-            xiPred = (X.multiply(scalerArrayAll)) @ coeffsA
-            etaPred = (X.multiply(scalerArrayAll)) @ coeffsB
+                dxs = dxAll[jjj]
+                dys = dyAll[jjj]
+                rolls = rollAll[jjj]
 
-            residualsXi = xiRef - xiPred
-            residualsEta = etaRef - etaPred
+                plateID   = plateIDAll[jjj]
+                tObs      = tAll[jjj]
+                rootnames = rootnamesAll[jjj]
 
-            outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(outDir,
-                                                                                                             chip,
-                                                                                                             self.pOrder,
-                                                                                                             self.kOrder,
-                                                                                                             self.nKnots)
+                X = deepcopy(XAll[jjj])
 
-            outTable = QTable(
-                [xyRaw[:, 0], xyRaw[:, 1], xiPred, etaPred, xiRef, etaRef, residualsXi, residualsEta, weights, plateID,
-                 tObs, rootnames], names=(
-                'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'tObs', 'rootname'))
+                ## Initialize the reference coordinates
+                xiRef = deepcopy(xiAll[jjj])
+                etaRef = deepcopy(etaAll[jjj])
 
-            outTable.write(outTableFilename, overwrite=True)
+                ## Initialize the raw coordinates
+                xyRaw = xyRawAll[jjj]
 
-            print("Residual table written to {0:s}".format(outTableFilename))
-        print("ALL DONE!")
+                ## Initialize the weights using the match residuals
+                ## weights = np.ones(X.shape[0])
+                residuals = matchResAll[jjj]
+
+                ## Use the weights to estimate the mean and covariance matrix of the residual
+                ## distribution. Calculate the mean and covariance matrix for individual exposures,
+                ## as they are time-dependent
+                weights = np.zeros(residuals.shape[0])
+                for i in range(nOkay):
+                    j = okayIDs[i]
+
+                    selection = plateID == j
+
+                    nSelection = selection[selection].size
+
+                    mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals[selection], np.ones(nSelection))
+
+                    weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection], mean, np.linalg.inv(cov)))
+
+                previousWeightSum = np.sum(weights)
+
+                nIterTotal = 0
+
+                plotFilename1 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualDistribution.pdf".format(
+                    outDir, chip, self.pOrder, self.kOrder, self.nKnots)
+
+                pp1 = PdfPages(plotFilename1)
+
+                plotFilename2 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualsXY.pdf".format(
+                    outDir, chip, self.pOrder, self.kOrder, self.nKnots)
+
+                pp2 = PdfPages(plotFilename2)
+
+                for iteration in range(N_ITER_OUTER):
+                    print("OUTER_ITERATION {0:d}, AVERAGE SHIFTS AND ROLL:".format(iteration + 1), np.nanmean(dxs),
+                          np.nanmean(dys), np.nanmean(rolls))
+                    for i in range(nOkay):
+                        j = okayIDs[i]
+
+                        sx, sy, roll = dxs[i], dys[i], rolls[i]
+
+                        selection = plateID == j
+
+                        xiRef[selection], etaRef[selection] = coords.shift_rotate_coords(xiRef[selection],
+                                                                                         etaRef[selection],
+                                                                                         sx, sy, roll)
+
+                    for iteration2 in range(N_ITER_INNER):
+                        startTime = time.time()
+
+                        nIterTotal += 1
+
+                        nStars = xiRef.size
+
+                        W = sparse.spdiags([weights], 0)
+
+                        A = X.T @ W @ X
+
+                        b_xi = (X.T @ W @ (xiRef / scalerX)).reshape((-1, 1))
+                        b_eta = (X.T @ W @ (etaRef / scalerY)).reshape((-1, 1))
+
+                        coeffsA, res, rnk, s = linalg.lstsq(A.todense(), b_xi, overwrite_a=True, overwrite_b=True)
+
+                        coeffsA = coeffsA.flatten() * scalerX / scalerArrayAll
+
+                        coeffsB, res, rnk, s = linalg.lstsq(A.todense(), b_eta, overwrite_a=True, overwrite_b=True)
+
+                        coeffsB = coeffsB.flatten() * scalerY / scalerArrayAll
+                        '''
+                        reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
+
+                        reg.fit(X, xiRef / scalerX, sample_weight=weights)
+
+                        coeffsA = reg.coef_.flatten() * scalerX / scalerArrayAll
+
+                        reg.fit(X, etaRef / scalerY, sample_weight=weights)
+
+                        coeffsB = reg.coef_.flatten() * scalerY / scalerArrayAll
+                        ''';
+
+                        if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
+                            coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
+                                outDir, chip, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1)
+
+                            np.save(coeffsAFilename, coeffsA)
+
+                            coeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
+                                outDir, chip, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1)
+
+                            np.save(coeffsBFilename, coeffsB)
+
+                        ## Residuals already in pixel and in image axis
+                        residualsXi  = xiRef  - ((X.multiply(scalerArrayAll)) @ coeffsA)
+                        residualsEta = etaRef - ((X.multiply(scalerArrayAll)) @ coeffsB)
+
+                        rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
+                        rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
+
+                        residuals = np.vstack([residualsXi, residualsEta]).T
+
+                        ## Use the weights to estimate the mean and covariance matrix of the residual
+                        ## distribution
+                        for i in range(nOkay):
+                            j = okayIDs[i]
+
+                            selection = plateID == j
+
+                            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals[selection], weights[selection])
+
+                            weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection],
+                                                                                          mean, np.linalg.inv(cov)))
+
+                        ## What we now call 'retained' are those stars with full weight
+                        retained0 = weights >= 1.0
+
+                        ## We have non-full weight stars but non-zero weights
+                        nonFull = (~retained0) & (weights > 0)
+
+                        ## Finally those stars with zero weights
+                        rejected = weights <= 0
+
+                        weightSum = np.sum(weights)
+
+                        weightSumDiff = np.abs(weightSum - previousWeightSum) / weightSum
+
+                        ## Assign the current weight summation for the next iteration
+                        previousWeightSum = weightSum
+
+                        elapsedTime = time.time() - startTime
+
+                        print(chip, iteration + 1, iteration2 + 1,
+                              "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (xiAll[jjj].size)),
+                              "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum),
+                              "Elapsed time: {0}".format(convertTime(elapsedTime)))
+
+                        if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
+                            xSize = 8
+                            ySize = xSize
+
+                            fig = plt.figure(figsize=(xSize, ySize), rasterized=True)
+
+                            ax = fig.add_subplot(111)
+
+                            ax.plot(residuals[rejected][:, 0], residuals[rejected][:, 1], '.', markersize=markerSize,
+                                    label=r'$w = 0$', color=discardedColor, rasterized=True)
+                            ax.plot(residuals[nonFull][:, 0], residuals[nonFull][:, 1], '.', markersize=markerSize,
+                                    label=r'$0 < w < 1$', color=nonFullColor, rasterized=True)
+                            ax.plot(residuals[retained0][:, 0], residuals[retained0][:, 1], '.', markersize=markerSize,
+                                    label=r'$w = 1$', color=retainedColor, rasterized=True)
+
+                            ax.axhline()
+                            ax.axvline()
+
+                            xMin1, xMax1 = ax.get_xlim()
+                            yMin1, yMax1 = ax.get_ylim()
+
+                            maxRange = np.nanmax(np.abs(np.array([xMin1, xMax1, yMin1, yMax1])))
+
+                            ax.set_xlim(-maxRange, +maxRange)
+                            ax.set_ylim(-maxRange, +maxRange)
+
+                            ax.set_aspect('equal')
+
+                            ax.set_xlabel(r'$\Delta X$ [pix]')
+                            ax.set_ylabel(r'$\Delta Y$ [pix]')
+
+                            ax.xaxis.set_major_locator(AutoLocator())
+                            ax.xaxis.set_minor_locator(AutoMinorLocator())
+
+                            ax.yaxis.set_major_locator(AutoLocator())
+                            ax.yaxis.set_minor_locator(AutoMinorLocator())
+
+                            ax.legend(frameon=True)
+
+                            ax.set_title(
+                                '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
+                                                                                                                  self.pOrder,
+                                                                                                                  self.kOrder,
+                                                                                                                  self.nKnots,
+                                                                                                                  iteration + 1,
+                                                                                                                  iteration2 + 1))
+
+                            pp1.savefig(fig)
+
+                            plt.close(fig=fig)
+
+                            fig2, axes2 = plt.subplots(figsize=(xSize2, ySize2), nrows=nRows2, ncols=nCols2,
+                                                       rasterized=True)
+
+                            xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
+                            yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
+
+                            XY0 = np.array([X0, Y0[0]])
+
+                            xMin = np.array([0, 0])
+                            xMax = np.array([4096, 2048])
+
+                            yMin = +np.inf
+                            yMax = -np.inf
+
+                            for axis1 in range(NAXIS):
+                                for axis2 in range(NAXIS):
+                                    coordinatesDiscarded = xyRaw[rejected][:, axis2]
+                                    residualsDiscarded = residuals[rejected][:, axis1]
+
+                                    coordinatesNonFull = xyRaw[nonFull][:, axis2]
+                                    residualsNonFull = residuals[nonFull][:, axis1]
+
+                                    coordinatesRetained = xyRaw[retained0][:, axis2]
+                                    residualsRetained = residuals[retained0][:, axis1]
+
+                                    mean = np.nanmean(residuals[retained0][:, axis1])
+                                    stdDev = np.nanstd(residuals[retained0][:, axis1])
+
+                                    axes2[axis1, axis2].plot(coordinatesDiscarded, residualsDiscarded, '.',
+                                                             markersize=markerSize, zorder=1, label=r'$w = 0$',
+                                                             color=discardedColor, rasterized=True)
+                                    axes2[axis1, axis2].plot(coordinatesNonFull, residualsNonFull, '.',
+                                                             markersize=markerSize, zorder=1, label=r'$0 < w < 1$',
+                                                             color=nonFullColor, rasterized=True)
+                                    axes2[axis1, axis2].plot(coordinatesRetained, residualsRetained, '.',
+                                                             markersize=markerSize, zorder=1, label=r'$w = 1$',
+                                                             color=retainedColor, rasterized=True)
+
+                                    axes2[axis1, axis2].axhline(0,
+                                                                color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+                                                                linestyle='--', zorder=2)
+
+                                    axes2[axis1, axis2].axhline(mean, color='r', linestyle='-', zorder=3)
+
+                                    ## xMin, xMax = axes2[axis1,axis2].get_xlim()
+
+                                    resMin = mean - stdDev
+                                    resMax = mean + stdDev
+
+                                    yMin = np.nanmin(np.array([yMin, mean - 5.0 * stdDev, np.nanmin(residuals)]))
+                                    yMax = np.nanmax(np.array([yMax, mean + 5.0 * stdDev, np.nanmax(residuals)]))
+
+                                    axes2[axis1, axis2].fill_between([xMin[axis2], xMax[axis2]], [resMin, resMin],
+                                                                     y2=[resMax, resMax], alpha=0.2, zorder=3)
+
+                                    axes2[axis1, axis2].set_xlabel(xLabels[axis2])
+                                    axes2[axis1, axis2].set_ylabel(yLabels[axis1])
+
+                                    axes2[axis1, axis2].xaxis.set_major_locator(MultipleLocator(dX))
+                                    axes2[axis1, axis2].xaxis.set_minor_locator(MultipleLocator(dMX))
+
+                                    axes2[axis1, axis2].yaxis.set_major_locator(AutoLocator())
+                                    axes2[axis1, axis2].yaxis.set_minor_locator(AutoMinorLocator())
+
+                                    axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
+
+                            ## print("Y_MIN:", yMin, "Y_MAX:", yMax)
+
+                            yMaxMin = np.nanmax(np.abs(np.array([yMin, yMax])))
+
+                            for axis1 in range(NAXIS):
+                                for axis2 in range(NAXIS):
+                                    axes2[axis1, axis2].set_ylim([-yMaxMin, +yMaxMin])
+
+                            ## axes2[0,0].legend()
+
+                            axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
+
+                            axCommons.set_title(
+                                '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
+                                                                                                                  self.pOrder,
+                                                                                                                  self.kOrder,
+                                                                                                                  self.nKnots,
+                                                                                                                  iteration + 1,
+                                                                                                                  iteration2 + 1))
+
+                            plt.subplots_adjust(wspace=0.25, hspace=0.3)
+
+                            pp2.savefig(fig2, bbox_inches='tight', dpi=300)
+
+                            plt.close(fig=fig2)
+
+                        gc.set_threshold(2, 1, 1)
+
+                        del residualsXi
+                        del residualsEta
+                        del residuals
+                        gc.collect()
+
+                        ## At the last iteration, re-calculate the shift and rolls
+                        ## if ((iteration2+1) == (N_ITER_INNER)):
+                        if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
+                            ## Find the shift and rotation of the reference coordinates
+                            ## using the new zero-th order coefficients and rotation angle
+                            thisP = 2
+
+                            if (thisP <= self.nParsPIndiv):
+                                end = nImages * self.nParsPIndiv
+
+                                dxs = coeffsA[0:end:self.nParsPIndiv]
+                                dys = coeffsB[0:end:self.nParsPIndiv]
+                                rolls = -np.arctan(coeffsA[thisP:end:self.nParsPIndiv] / coeffsB[thisP:end:self.nParsPIndiv])
+                            else:
+                                start = nImages * self.nParsPIndiv + (thisP - self.nParsPIndiv) * self.nParsK
+                                end   = start + self.nParsK
+
+                                coeffsA3 = XtAll @ coeffsA[start:end]
+                                coeffsB3 = XtAll @ coeffsB[start:end]
+
+                                dxs = coeffsA[:nImages]
+                                dys = coeffsB[:nImages]
+                                rolls = -np.arctan(coeffsA3 / coeffsB3)
+
+                            break
+                        else:
+                            X = X[~rejected]
+
+                            weights = weights[~rejected]
+
+                            xiRef = xiRef[~rejected]
+                            etaRef = etaRef[~rejected]
+
+                            xyRaw = xyRaw[~rejected]
+
+                            plateID = plateID[~rejected]
+                            tObs = tObs[~rejected]
+                            rootnames = rootnames[~rejected]
+
+                pp1.close()
+
+                print("Residual 2d distribution plots saved to {0:s}".format(plotFilename1))
+
+                pp2.close()
+
+                print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
+
+                np.save(coeffsAFilename, coeffsA)
+                np.save(coeffsBFilename, coeffsB)
+
+                xiPred = (X.multiply(scalerArrayAll)) @ coeffsA
+                etaPred = (X.multiply(scalerArrayAll)) @ coeffsB
+
+                residualsXi = xiRef - xiPred
+                residualsEta = etaRef - etaPred
+
+                outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(outDir,
+                                                                                                                 chip,
+                                                                                                                 self.pOrder,
+                                                                                                                 self.kOrder,
+                                                                                                                 self.nKnots)
+
+                outTable = QTable(
+                    [xyRaw[:, 0], xyRaw[:, 1], xiPred, etaPred, xiRef, etaRef, residualsXi, residualsEta, weights, plateID,
+                     tObs, rootnames], names=(
+                    'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'tObs', 'rootname'))
+
+                outTable.write(outTableFilename, overwrite=True)
+
+                print("Residual table written to {0:s}".format(outTableFilename))
+        elapsedTime = time.time() - startTimeAll
+        print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
