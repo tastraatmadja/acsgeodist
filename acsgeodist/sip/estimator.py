@@ -980,7 +980,7 @@ T_MAX2 = 2025.0000
 
 class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
-                 qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100,
+                 qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0, max_pos_targs=0.0,
                  make_lithographic_and_filter_mask_corrections=True, cross_match=True):
         super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
                        min_n_refstar=min_n_refstar,
@@ -1000,8 +1000,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.tKnot  = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
 
+        self.min_t_exp     = min_t_exp
+        self.max_pos_targs = max_pos_targs
+
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', **kwargs):
-        nOkay = 0
+        nOkay    = 0
         nDataAll = np.zeros(2, dtype=int)
 
         okayIDs = []
@@ -1060,6 +1063,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             XAll.append([])
 
+        selectedHST1PassFiles = []
+        selectedImageFiles    = []
         for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
             addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
 
@@ -1073,7 +1078,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
                 t_acs = Time(tstring, scale='utc', format='fits')
 
-                if ((t_acs.decimalyear >= self.tMin) and (t_acs.decimalyear <= self.tMax)):
+                tExp = float(hduList[0].header['EXPTIME'])
+
+                posTarg1 = float(hduList[0].header['POSTARG1'])
+                posTarg2 = float(hduList[0].header['POSTARG2'])
+
+                posTargResultant = np.sqrt(posTarg1 ** 2 + posTarg2 ** 2)
+
+                if ((t_acs.decimalyear >= self.tMin) and (t_acs.decimalyear <= self.tMax)  and (tExp > self.min_t_exp)
+                        and (posTargResultant <= self.max_pos_targs)):
                     print()
                     print(i, os.path.basename(hst1passFile), os.path.basename(addendumFilename), baseImageFilename,
                           rootName)
@@ -1122,6 +1135,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
 
                     if okayToProceed:
+                        selectedHST1PassFiles.append(hst1passFile)
+                        selectedImageFiles.append(imageFilename)
+
                         nOkay += 1
 
                         okayIDs.append(i)
@@ -1238,6 +1254,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     del hduList
                     gc.collect()
 
+        print("NUMBER OF SELECTED FILES:", nOkay)
+
         okayIDs = np.array(okayIDs)
 
         nDataImages = np.array(nDataImages)
@@ -1253,12 +1271,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             xiAll[jjj] = np.hstack(xiAll[jjj])
             etaAll[jjj] = np.hstack(etaAll[jjj])
 
-            plateIDAll[jjj] = np.hstack(plateIDAll[jjj])
-            tAll[jjj] = np.hstack(tAll[jjj])
+            plateIDAll[jjj]   = np.hstack(plateIDAll[jjj])
+            tAll[jjj]         = np.hstack(tAll[jjj])
             rootnamesAll[jjj] = np.hstack(rootnamesAll[jjj])
 
-            dxAll[jjj] = np.hstack(dxAll[jjj])
-            dyAll[jjj] = np.hstack(dyAll[jjj])
+            dxAll[jjj]   = np.hstack(dxAll[jjj])
+            dyAll[jjj]   = np.hstack(dyAll[jjj])
             rollAll[jjj] = np.hstack(rollAll[jjj])
 
             XAll[jjj] = sparse.hstack([sparse.block_diag(XpAll[jjj], format='csr'), sparse.vstack(XkpAll[jjj])])
@@ -1270,14 +1288,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             XpAll[jjj] = None
             XkpAll[jjj] = None
 
-            print(XAll[jjj].shape)
-
         del XpAll
         del XkpAll
         gc.collect()
 
         elapsedTime = time.time() - startTime
-        print("READING DATA AND BUILDING DONE! Elapsed time:", convertTime(elapsedTime))
+        print("READING DATA AND BUILDING MODEL DONE! Elapsed time:", convertTime(elapsedTime))
 
         xSize1 = 12
         ySize1 = 0.25 * xSize1
@@ -1312,7 +1328,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         ## for knot in range(-kOrder, tT.size - 2 * kOrder - 1):
         for ii in range(self.tKnot.size + self.kOrder - 1):
-            knotID = ii - self.kOrder
+            knotID  = ii - self.kOrder
             BSpline = signal.bspline((tPlot - self.tMin) / self.dtKnot - 0.5 * (self.kOrder + 1) - knotID, self.kOrder)
 
             nonZero = BSpline > 0
@@ -1400,18 +1416,18 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         startTimeAll = time.time()
         for chip in chips:
-            coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
+            finalCoeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
                                                                                                              chip,
                                                                                                              self.pOrder,
                                                                                                              self.kOrder,
                                                                                                              self.nKnots)
-            coeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
+            finalCoeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
                                                                                                              chip,
                                                                                                              self.pOrder,
                                                                                                              self.kOrder,
                                                                                                              self.nKnots)
 
-            if (not os.path.exists(coeffsAFilename)) or (not os.path.exists(coeffsBFilename )):
+            if (not os.path.exists(finalCoeffsAFilename)) or (not os.path.exists(finalCoeffsBFilename)):
                 jjj = chip - 1
 
                 dxs = dxAll[jjj]
@@ -1425,7 +1441,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 X = deepcopy(XAll[jjj])
 
                 ## Initialize the reference coordinates
-                xiRef = deepcopy(xiAll[jjj])
+                xiRef  = deepcopy(xiAll[jjj])
                 etaRef = deepcopy(etaAll[jjj])
 
                 ## Initialize the raw coordinates
@@ -1489,7 +1505,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         A = X.T @ W @ X
 
-                        b_xi = (X.T @ W @ (xiRef / scalerX)).reshape((-1, 1))
+                        b_xi  = (X.T @ W @ (xiRef / scalerX)).reshape((-1, 1))
                         b_eta = (X.T @ W @ (etaRef / scalerY)).reshape((-1, 1))
 
                         coeffsA, res, rnk, s = linalg.lstsq(A.todense(), b_xi, overwrite_a=True, overwrite_b=True)
@@ -1763,13 +1779,13 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
 
-                np.save(coeffsAFilename, coeffsA)
-                np.save(coeffsBFilename, coeffsB)
+                np.save(finalCoeffsAFilename, coeffsA)
+                np.save(finalCoeffsBFilename, coeffsB)
 
-                xiPred = (X.multiply(scalerArrayAll)) @ coeffsA
+                xiPred  = (X.multiply(scalerArrayAll)) @ coeffsA
                 etaPred = (X.multiply(scalerArrayAll)) @ coeffsB
 
-                residualsXi = xiRef - xiPred
+                residualsXi  = xiRef - xiPred
                 residualsEta = etaRef - etaPred
 
                 outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(outDir,
@@ -1786,5 +1802,101 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 outTable.write(outTableFilename, overwrite=True)
 
                 print("Residual table written to {0:s}".format(outTableFilename))
+
+        '''
+        print("APPLYING TIME-DEPENDENT COEFFICIENTS TO SELECTED HST1PASS FILES...")
+
+        for i, (hst1passFile, imageFilename) in enumerate(zip(selectedHST1PassFiles, selectedImageFiles)):
+            addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+
+            baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
+
+            hduList = fits.open(imageFilename)
+
+            tExp = float(hduList[0].header['EXPTIME'])
+            tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
+            t_acs = Time(tstring, scale='ut1', format='fits')
+
+            pa_v3    = float(hduList[0].header['PA_V3'])
+
+            posTarg1 = float(hduList[0].header['POSTARG1'])
+            posTarg2 = float(hduList[0].header['POSTARG2'])
+
+            dt = t_acs.decimalyear - self.tRef0
+
+            ## We use the observation time, in combination with the proper motions to move
+            ## the coordinates into the time
+            self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
+            self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+
+            hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+
+            outTableFilename = '{0:s}/{1:s}_hst1pass_stand_pOrder{2:d}_kOrder{3:d}_resids.csv'.format(
+                outDir, baseImageFilename, self.pOrder, self.kOrder)
+
+            ## Change the columns with default values
+            hst1pass['xPred'] = np.nan
+            hst1pass['yPred'] = np.nan
+            hst1pass['xRef'] = np.nan
+            hst1pass['yRef'] = np.nan
+            hst1pass['dx'] = np.nan
+            hst1pass['dy'] = np.nan
+            hst1pass['retained'] = False
+            hst1pass['weights'] = 0.0  ## Final weights for all detected sources in the chip
+            hst1pass['xi'] = np.nan
+            hst1pass['eta'] = np.nan
+            hst1pass['xiRef'] = np.nan
+            hst1pass['etaRef'] = np.nan
+            hst1pass['resXi'] = np.nan
+            hst1pass['resEta'] = np.nan
+            hst1pass['alpha'] = np.nan
+            hst1pass['delta'] = np.nan
+            hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
+
+            Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
+
+            for chip in chips:
+                jj  = 2 - chip
+                jjj = chip - 1
+
+                chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1])
+
+                hdu = hduList['SCI', chip]
+
+                vaFactor = float(hdu.header['VAFACTOR'])
+
+                selection = (hst1pass['k'] == chip)
+
+                hasRefStar = (hst1pass['refCatIndex'] >= 0)
+
+                refStarIdx = hst1pass[selection]['refCatIndex'].value
+
+                xiRef  = self.refCat[refStarIdx]['xt'] / vaFactor
+                etaRef = self.refCat[refStarIdx]['yt'] / vaFactor
+
+                XC = hst1pass['X'][selection] - X0
+                YC = hst1pass['Y'][selection] - Y0[chip - 1]
+
+                if self.make_lithographic_and_filter_mask_corrections:
+                    dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj], hst1pass['X'][selection].value,
+                                                                 hst1pass['Y'][selection].value - yzp, XRef * 2,
+                                                                 YRef * 2)).T
+                    fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jjj], hst1pass['X'][selection].value,
+                                                                 hst1pass['Y'][selection].value - yzp, XRef * 2,
+                                                                 YRef * 2)).T
+
+                    ## Apply the lithographic mask correction
+                    XC -= (dcorr[:, 2] - fcorr[:, 2])
+                    YC -= (dcorr[:, 3] - fcorr[:, 3])
+
+                Xp, scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
+
+                Xkp = np.zeros((Xp.shape[0], self.nParsK * (self.nParsP - self.nParsPIndiv)))
+
+                for p in range(self.nParsPIndiv, self.nParsP):
+                    for k in range(self.nParsK):
+                        Xkp[:, (p - self.nParsPIndiv) * self.nParsK + k] = Xt[0, k] * Xp[:, p]
+        ''';
+
         elapsedTime = time.time() - startTimeAll
         print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
