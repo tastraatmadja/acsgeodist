@@ -1414,6 +1414,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         nonFullColor = '#fc8d59'  ## Orange
         discardedColor = 'r'
 
+        coeffAFilenames = []
+        coeffBFilenames = []
+
         startTimeAll = time.time()
         for chip in chips:
             finalCoeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
