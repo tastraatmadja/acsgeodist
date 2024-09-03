@@ -993,9 +993,24 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.tMin        = tMin
         self.tMax        = tMax
 
-        self.nParsPIndiv = sip.getUpperTriangularMatrixNumberOfElements(self.pOrderIndiv + 1)  ## Number of parameters PER AXIS!
-        self.nParsP      = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1)       ## Number of parameters PER AXIS!
-        self.nParsK      = self.nKnots + self.kOrder  ## Number of parameters include constant parameter (zero point)
+        ## These are numbers of parameters PER AXIS! Note the suffix A and B to indicate the axes
+        self.nParsIndiv_A = sip.getUpperTriangularMatrixNumberOfElements(self.pOrderIndiv + 1)
+        self.nParsIndiv_B = self.nParsIndiv_A
+
+        self.nParsLinear_A = 0
+        self.nParsLinear_B = 0
+        if (self.pOrderIndiv < 1):
+            self.nParsLinear_A = 2
+            self.nParsLinear_B = 1
+
+        self.nParsSpline_A = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_A - self.nParsLinear_A
+        self.nParsSpline_B = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_B - self.nParsLinear_B
+
+        print(self.nParsIndiv_A,  self.nParsIndiv_B)
+        print(self.nParsLinear_A, self.nParsLinear_B)
+        print(self.nParsSpline_A, self.nParsSpline_B)
+
+        self.nParsK = self.nKnots + self.kOrder  ## Number of B-spline parameters include constant parameter (zero point)
 
         self.tKnot  = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
