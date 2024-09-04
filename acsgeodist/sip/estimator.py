@@ -589,7 +589,7 @@ class SIPEstimator():
 
                         xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
 
-                    xiPred = np.matmul(X * scalerArray, coeffs[0::2])
+                    xiPred  = np.matmul(X * scalerArray, coeffs[0::2])
                     etaPred = np.matmul(X * scalerArray, coeffs[1::2])
 
                     hst1pass['xPred'][selection] = xiPred
@@ -1882,100 +1882,284 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 print("Residual table written to {0:s}".format(outTableFilename))
 
-        '''
         print("APPLYING TIME-DEPENDENT COEFFICIENTS TO SELECTED HST1PASS FILES...")
-
-        for i, (hst1passFile, imageFilename) in enumerate(zip(selectedHST1PassFiles, selectedImageFiles)):
+        for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
             addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
 
             baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
 
-            hduList = fits.open(imageFilename)
+            if (os.path.exists(imageFilename)) and (os.path.exists(addendumFilename)):
+                hduList = fits.open(imageFilename)
 
-            tExp = float(hduList[0].header['EXPTIME'])
-            tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
-            t_acs = Time(tstring, scale='ut1', format='fits')
+                tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
+                t_acs = Time(tstring, scale='utc', format='fits')
 
-            pa_v3    = float(hduList[0].header['PA_V3'])
+                if (self.tMin <= t_acs.decimalyear <= self.tMax):
+                    dt = t_acs.decimalyear - self.tRef0
 
-            posTarg1 = float(hduList[0].header['POSTARG1'])
-            posTarg2 = float(hduList[0].header['POSTARG2'])
+                    pa_v3 = float(hduList[0].header['PA_V3'])
 
-            dt = t_acs.decimalyear - self.tRef0
+                    posTarg1 = float(hduList[0].header['POSTARG1'])
+                    posTarg2 = float(hduList[0].header['POSTARG2'])
 
-            ## We use the observation time, in combination with the proper motions to move
-            ## the coordinates into the time
-            self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
-            self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+                    ## We use the observation time, in combination with the proper motions to move
+                    ## the coordinates into the time
+                    self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
+                    self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
 
-            hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+                    hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
 
-            outTableFilename = '{0:s}/{1:s}_hst1pass_stand_pOrder{2:d}_kOrder{3:d}_resids.csv'.format(
-                outDir, baseImageFilename, self.pOrder, self.kOrder)
+                    matchRes = np.sqrt(
+                        (hst1pass['xPred'] - hst1pass['xRef']) ** 2 + (hst1pass['yPred'] - hst1pass['yRef']) ** 2)
 
-            ## Change the columns with default values
-            hst1pass['xPred'] = np.nan
-            hst1pass['yPred'] = np.nan
-            hst1pass['xRef'] = np.nan
-            hst1pass['yRef'] = np.nan
-            hst1pass['dx'] = np.nan
-            hst1pass['dy'] = np.nan
-            hst1pass['retained'] = False
-            hst1pass['weights'] = 0.0  ## Final weights for all detected sources in the chip
-            hst1pass['xi'] = np.nan
-            hst1pass['eta'] = np.nan
-            hst1pass['xiRef'] = np.nan
-            hst1pass['etaRef'] = np.nan
-            hst1pass['resXi'] = np.nan
-            hst1pass['resEta'] = np.nan
-            hst1pass['alpha'] = np.nan
-            hst1pass['delta'] = np.nan
-            hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
+                    ## Change the columns with default values
+                    hst1pass['xPred']    = np.nan
+                    hst1pass['yPred']    = np.nan
+                    hst1pass['xRef']     = np.nan
+                    hst1pass['yRef']     = np.nan
+                    hst1pass['dx']       = np.nan
+                    hst1pass['dy']       = np.nan
+                    hst1pass['retained'] = False
+                    hst1pass['weights']  = 0.0  ## Final weights for all detected sources in the chip
+                    hst1pass['xi']       = np.nan
+                    hst1pass['eta']      = np.nan
+                    hst1pass['xiRef']    = np.nan
+                    hst1pass['etaRef']   = np.nan
+                    hst1pass['resXi']    = np.nan
+                    hst1pass['resEta']   = np.nan
+                    hst1pass['alpha']    = np.nan
+                    hst1pass['delta']    = np.nan
+                    hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
 
-            Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
+                    textResults = ""
+                    for chip in chips:
+                        startTime = time.time()
 
-            for chip in chips:
-                jj  = 2 - chip
-                jjj = chip - 1
+                        jj = 2 - chip
+                        jjj = chip - 1
 
-                chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1])
+                        hdu = hduList['SCI', chip]
 
-                hdu = hduList['SCI', chip]
+                        ## Zero point of the y coordinates.
+                        if (chip == 1):
+                            yzp = 0.0
+                            naxis2 = int(hdu.header['NAXIS2'])
+                        else:
+                            yzp += float(naxis2)
 
-                vaFactor = float(hdu.header['VAFACTOR'])
+                            naxis2 = int(hdu.header['NAXIS2'])
 
-                selection = (hst1pass['k'] == chip)
+                        orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
+                        vaFactor = float(hdu.header['VAFACTOR'])
 
-                hasRefStar = (hst1pass['refCatIndex'] >= 0)
+                        ## Now that we have the coefficients, we repeat the model building for ALL objects in the chip
+                        selection = (hst1pass['k'] == chip)
 
-                refStarIdx = hst1pass[selection]['refCatIndex'].value
+                        hasRefStar = (hst1pass['refCatIndex'] >= 0)
 
-                xiRef  = self.refCat[refStarIdx]['xt'] / vaFactor
-                etaRef = self.refCat[refStarIdx]['yt'] / vaFactor
+                        refStarIdx = hst1pass[selection]['refCatIndex'].value
 
-                XC = hst1pass['X'][selection] - X0
-                YC = hst1pass['Y'][selection] - Y0[chip - 1]
+                        xiRef = self.refCat[refStarIdx]['xt'] / vaFactor
+                        etaRef = self.refCat[refStarIdx]['yt'] / vaFactor
 
-                if self.make_lithographic_and_filter_mask_corrections:
-                    dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj], hst1pass['X'][selection].value,
-                                                                 hst1pass['Y'][selection].value - yzp, XRef * 2,
-                                                                 YRef * 2)).T
-                    fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jjj], hst1pass['X'][selection].value,
-                                                                 hst1pass['Y'][selection].value - yzp, XRef * 2,
-                                                                 YRef * 2)).T
+                        XC = hst1pass['X'][selection] - X0
+                        YC = hst1pass['Y'][selection] - Y0[chip - 1]
 
-                    ## Apply the lithographic mask correction
-                    XC -= (dcorr[:, 2] - fcorr[:, 2])
-                    YC -= (dcorr[:, 3] - fcorr[:, 3])
+                        if self.make_lithographic_and_filter_mask_corrections:
+                            dcorr = np.array(
+                                litho.interp_dtab_ftab_data(self.dtabs[jjj], hst1pass['X'][selection].value,
+                                                            hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                            fcorr = np.array(
+                                litho.interp_dtab_ftab_data(self.ftabs[jjj], hst1pass['X'][selection].value,
+                                                            hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
 
-                Xp, scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
+                            ## Apply the lithographic mask correction
+                            XC -= (dcorr[:, 2] - fcorr[:, 2])
+                            YC -= (dcorr[:, 3] - fcorr[:, 3])
 
-                Xkp = np.zeros((Xp.shape[0], self.nParsK * (self.nParsP - self.nParsPIndiv)))
+                        X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
 
-                for p in range(self.nParsPIndiv, self.nParsP):
-                    for k in range(self.nParsK):
-                        Xkp[:, (p - self.nParsPIndiv) * self.nParsK + k] = Xt[0, k] * Xp[:, p]
-        ''';
+                        alpha0Im = float(hdu.header['CRVAL1'])
+                        delta0Im = float(hdu.header['CRVAL2'])
+
+                        ## We calculate the CD Matrix used to transform the intermediate world coordinate
+                        ## We take the reference coordinate to be the CRVAL1,2 in the header and a create a SkyCoord object
+                        c0Im = SkyCoord(ra=alpha0Im * u.deg, dec=delta0Im * u.deg, frame='icrs')
+
+                        ## Now we take the normal triad pqr_0 of the reference coordinate
+                        pqr0Im = coords.getNormalTriad(c0Im)
+
+                        selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & hst1pass['retained']
+                        refStarIdx = hst1pass['refCatIndex'][selection].value
+
+                        XCorr = hst1pass['xPred'][selection].value
+                        YCorr = hst1pass['yPred'][selection].value
+
+                        for iteration3 in range(N_ITER_CD):
+                            ## Calculate the normal coordinates relative to the pqr triad centered on the current CRVAL1,2
+                            self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef, pqr0Im)
+
+                            ## The reference coordinates used for regression of the CD matrix is relative to the current
+                            ## CRVAL1, CRVAL2 coordinates
+                            xiRef  = (self.refCat['xi'][refStarIdx].value * u.arcsec).to(u.deg) / vaFactor
+                            etaRef = (self.refCat['eta'][refStarIdx].value * u.arcsec).to(u.deg) / vaFactor
+
+                            ## Store the reference coordinates back in pixel scale
+                            hst1pass['xiRef'][selection] = xiRef.to_value(
+                                u.arcsec) / acsconstants.ACS_PLATESCALE.to_value(
+                                u.arcsec / u.pix)
+                            hst1pass['etaRef'][selection] = etaRef.to_value(
+                                u.arcsec) / acsconstants.ACS_PLATESCALE.to_value(
+                                u.arcsec / u.pix)
+
+                            ## Calculate the CD Matrix that transform the corrected coordinates
+                            ## XCorr, YCorr into normal coordinates Xi, Eta
+                            CDMatrix = self._getCDMatrix(XCorr, YCorr, xiRef.value, etaRef.value,
+                                                         weights=hst1pass['weights'][selection].value)
+
+                            ## Replace the CRVAL1, CRVAL2 coordinates using the constants of the CD Matrix
+                            c0Im = coords.getCelestialCoordinatesFromNormalCoordinates(CDMatrix[0, 0] * u.deg,
+                                                                                       CDMatrix[1, 0] * u.deg, c0Im,
+                                                                                       frame='icrs')
+
+                            ## Replace the triad pqr_0 using the new value of CRVAL1, CRVAL2
+                            pqr0Im = coords.getNormalTriad(c0Im)
+
+                            ## Apply the CD Matrix to all sources in the chip, in order to obtain the new normal coordinates
+                            selectionChip = hst1pass['k'] == chip
+
+                            H, _ = sip.buildModel(hst1pass['xPred'][selectionChip].value,
+                                                  hst1pass['yPred'][selectionChip].value,
+                                                  1)
+
+                            ## Calculate the normal coordinates Xi, Eta and assign them to the table
+                            hst1pass['xi'][selectionChip] = (
+                                    ((H @ CDMatrix[0]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
+                            hst1pass['eta'][selectionChip] = (
+                                    ((H @ CDMatrix[1]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
+
+                            ## Calculate the residuals
+                            hst1pass['resXi'][selection] = (
+                                    hst1pass['xi'][selection].value - hst1pass['xiRef'][selection].value)
+                            hst1pass['resEta'][selection] = (
+                                    hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
+
+                            print("CD_ITERATION:", (iteration3 + 1))
+                            print(CDMatrix)
+                            print(hst1pass['resXi', 'resEta'][selection].to_pandas().describe())
+
+                        alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
+
+                        xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
+
+                        xi0 = float(self.wcsRef.to_header()['CRPIX1']) - xi0[0]
+                        eta0 = eta0[0] - float(self.wcsRef.to_header()['CRPIX2'])
+
+                        selection = (hst1pass['k'] == chip)
+
+                        hst1pass['xi'][selection] = hst1pass['xi'][selection] + xi0
+                        hst1pass['eta'][selection] = hst1pass['eta'][selection] + eta0
+
+                        hst1pass['xiRef'][selection] = hst1pass['xiRef'][selection] + xi0
+                        hst1pass['etaRef'][selection] = hst1pass['etaRef'][selection] + eta0
+
+                        ## Calculate the residuals
+                        hst1pass['resXi'][selection] = (
+                                hst1pass['xi'][selection].value - hst1pass['xiRef'][selection].value)
+                        hst1pass['resEta'][selection] = (
+                                hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
+
+                        textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
+                            baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1,
+                            posTarg2)
+                        textResults += " {0:d} {1:d}".format(nIterTotal, nStars)
+                        textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
+                        textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
+                        textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
+                                                                                         CDMatrix[1, 1], CDMatrix[0, 2])
+                        for coeff in coeffs:
+                            textResults += " {0:0.12e}".format(coeff)
+                        textResults += "\n"
+
+                        ## Repeat the selection process
+                        selection = (hst1pass['k'] == chip) & (hst1pass['refCatID'] >= 0) & (hst1pass['q'] > 0) & (
+                                hst1pass['q'] <= self.qMax) & (~np.isnan(hst1pass['nAppearances'])) & (
+                                            hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
+                                            matchRes <= self.max_pix_tol)
+
+                        retained = np.zeros(len(hst1pass), dtype=bool)
+
+                        retained[indices] = True
+
+                        elapsedTime = time.time() - startTime
+                        print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
+
+                    plt.subplots_adjust(wspace=0.0, hspace=0.15)
+
+                    axCommons = plotting.drawCommonLabel(xLabel, yLabel, fig1, xPad=20, yPad=15)
+
+                    plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_retainedSources.pdf".format(outDir, baseImageFilename,
+                                                                                              pOrder)
+                    fig1.savefig(plotFilename3, bbox_inches='tight', dpi=300)
+
+                    print("Image saved to {0:s}".format(plotFilename3))
+
+                    plt.close(fig=fig1)
+
+                    ## Assign name for each sources in each chip. We first grab the xi, eta from the catalogue.
+                    xi = (hst1pass['xi'] * u.pix) * acsconstants.ACS_PLATESCALE
+                    eta = (hst1pass['eta'] * u.pix) * acsconstants.ACS_PLATESCALE
+
+                    ## Use the zero-point of the reference catalogue and declare a SkyCoord object from zero-point.
+                    c0 = SkyCoord(ra=self.alpha0, dec=self.delta0, frame='icrs')
+
+                    ## Find only sources with defined xi and eta. Don't worry if they're crap sources, we'll deal with them
+                    ## later in the next phase
+                    argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta)).flatten()
+
+                    ## Calculate the equatorial coordinates and assign them to the table
+                    c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], c0, frame='icrs')
+
+                    hst1pass['alpha'][argsel] = c.ra.value
+                    hst1pass['delta'][argsel] = c.dec.value
+
+                    ## Based on the equatorial coordinates assign a source ID for each source
+                    hst1pass['sourceID'][argsel] = astro.generateSourceID(c)
+
+                    ## Now we query the Gaia catalogue, if cross_match is set to True. For this we will have different
+                    ## criteria than before. We now only cross-match sources with 0 < q <= Q_MAX, for these are more likely
+                    ## to be bona-fide point-sources (i.e. stars).
+                    if self.cross_match:
+                        argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta) & (hst1pass['q'] > Q_MIN) & (
+                                    hst1pass['q'] <= Q_MAX)).flatten()
+
+                        c = SkyCoord(ra=hst1pass['alpha'][argsel] * u.deg, dec=hst1pass['delta'][argsel] * u.deg,
+                                     frame='icrs')
+
+                        self.c_gdr3 = self.c_gdr3.apply_space_motion(t_acs)
+
+                        idx, sep, _ = c.match_to_catalog_sky(self.c_gdr3)
+
+                        sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
+
+                        selection_gdr3 = sep_pix < MAX_SEP
+
+                        ## We now assign a different source ID for sources with known GDR3 stars counterpart
+                        hst1pass['sourceID'][argsel[selection_gdr3]] = self.gdr3_id[idx[selection_gdr3]]
+
+                    ## Write the final table
+                    outTableFilename = '{0:s}/{1:s}_hst1pass_stand_pOrder{2:d}_kOrder{3:d}_resids.csv'.format(
+                        outDir, baseImageFilename, self.pOrder, self.kOrder)
+
+                    hst1pass.write(outTableFilename, overwrite=True)
+
+                    print("Final table written to", outTableFilename)
+
+
+
+
+
+
 
         elapsedTime = time.time() - startTimeAll
         print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
