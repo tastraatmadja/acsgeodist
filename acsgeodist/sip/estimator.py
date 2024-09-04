@@ -976,12 +976,6 @@ class SIPEstimator():
 
         return tab
 
-T_MIN1 = 2002.1960
-T_MAX1 = 2007.0720
-
-T_MIN2 = 2009.4000
-T_MAX2 = 2025.0000
-
 class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
                  qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0, max_pos_targs=0.0,
@@ -1042,14 +1036,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         self.nParsK = self.nKnots + self.kOrder  ## Number of B-spline parameters include constant parameter (zero point)
 
-        print(self.indivParsIndices_A)
-        print(self.indivParsIndices_B)
-        print(self.splineParsIndices_A)
-        print(self.splineParsIndices_B)
-
-        print(self.nParsIndiv_A,  self.nParsIndiv_B)
-        print(self.nParsSpline_A, self.nParsSpline_B)
-        print(self.nParsK)
+        print("INDIVIDUAL PARAMETER INDICES A:", self.indivParsIndices_A, self.nParsIndiv_A)
+        print("INDIVIDUAL PARAMETER INDICES B:", self.indivParsIndices_B, self.nParsIndiv_A)
+        print("SPLINE PARAMETER INDICES A:", self.splineParsIndices_A, self.nParsSpline_A)
+        print("SPLINE PARAMETER INDICES B:", self.splineParsIndices_B, self.nParsSpline_B)
+        print("K_ORDER AND NUMBER OF KNOTS:", self.kOrder, self.nKnots)
+        print("NUMBER OF B-SPLINE PARAMETERS (PER COEFFICIENT):", self.nParsK)
 
         self.tKnot  = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
