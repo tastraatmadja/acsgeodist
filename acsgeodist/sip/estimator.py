@@ -31,6 +31,10 @@ MAX_SEP = 3.0 * u.pix
 HEIGHT  = 0.5 * u.deg
 WIDTH   = HEIGHT
 
+## Number of linear parameters
+N_PARS_LINE  = 2
+N_PARS_CONST = 1
+
 ## For cross-matching, select only Gaia sources with good astrometry measurements
 MIN_RUWE = 0.8
 MAX_RUWE = 1.2
@@ -579,8 +583,8 @@ class SIPEstimator():
                     X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
 
                     for iiii in range(len(dxs)):
-                        sx = dxs[iiii]
-                        sy = dys[iiii]
+                        sx   = dxs[iiii]
+                        sy   = dys[iiii]
                         roll = rolls[iiii]
 
                         xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
@@ -994,23 +998,58 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.tMax        = tMax
 
         ## These are numbers of parameters PER AXIS! Note the suffix A and B to indicate the axes
-        self.nParsIndiv_A = sip.getUpperTriangularMatrixNumberOfElements(self.pOrderIndiv + 1)
-        self.nParsIndiv_B = self.nParsIndiv_A
+        n = self.pOrderIndiv + 1
 
-        self.nParsLinear_A = 0
-        self.nParsLinear_B = 0
+        self.indivParsIndices_A = []
+        self.indivParsIndices_B = []
+
+        for ii in range(n):
+            for jj in range(n - ii):
+                ppp = sip.getUpperTriangularIndex(jj, ii)
+                self.indivParsIndices_A.append(ppp)
+                self.indivParsIndices_B.append(ppp)
+
         if (self.pOrderIndiv < 1):
-            self.nParsLinear_A = 2
-            self.nParsLinear_B = 1
+            self.indivParsIndices_A.append(2)
 
-        self.nParsSpline_A = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_A - self.nParsLinear_A
-        self.nParsSpline_B = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_B - self.nParsLinear_B
+        self.indivParsIndices_A = np.array(sorted(self.indivParsIndices_A))
+        self.indivParsIndices_B = np.array(sorted(self.indivParsIndices_B))
 
-        print(self.nParsIndiv_A,  self.nParsIndiv_B)
-        print(self.nParsLinear_A, self.nParsLinear_B)
-        print(self.nParsSpline_A, self.nParsSpline_B)
+        self.nParsIndiv_A = self.indivParsIndices_A.size
+        self.nParsIndiv_B = self.indivParsIndices_B.size
+
+        self.splineParsIndices_A = []
+        self.splineParsIndices_B = []
+
+        n = self.pOrder + 1
+        for ii in range(n):
+            for jj in range(n - ii):
+                ppp = sip.getUpperTriangularIndex(jj, ii)
+
+                if ppp not in self.indivParsIndices_A:
+                    self.splineParsIndices_A.append(ppp)
+                if ppp not in self.indivParsIndices_B:
+                    self.splineParsIndices_B.append(ppp)
+
+        self.splineParsIndices_A = np.array(sorted(self.splineParsIndices_A))
+        self.splineParsIndices_B = np.array(sorted(self.splineParsIndices_B))
+
+        self.nParsSpline_A = self.splineParsIndices_A.size
+        self.nParsSpline_B = self.splineParsIndices_B.size
+
+        ## self.nParsSpline_A = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_A
+        ## self.nParsSpline_B = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_B
 
         self.nParsK = self.nKnots + self.kOrder  ## Number of B-spline parameters include constant parameter (zero point)
+
+        print(self.indivParsIndices_A)
+        print(self.indivParsIndices_B)
+        print(self.splineParsIndices_A)
+        print(self.splineParsIndices_B)
+
+        print(self.nParsIndiv_A,  self.nParsIndiv_B)
+        print(self.nParsSpline_A, self.nParsSpline_B)
+        print(self.nParsK)
 
         self.tKnot  = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
@@ -1033,8 +1072,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         xiAll = []
         etaAll = []
 
-        XpAll = []
-        XkpAll = []
+        XpAll_A  = []
+        XkpAll_A = []
+
+        XpAll_B  = []
+        XkpAll_B = []
 
         xyRawAll = []
 
@@ -1047,7 +1089,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         XtAll = []
         tObs  = []
 
-        XAll = []
+        XAll_A = []
+        XAll_B = []
 
         matchResAll = []
 
@@ -1063,8 +1106,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             xiAll.append([])
             etaAll.append([])
 
-            XpAll.append([])
-            XkpAll.append([])
+            XpAll_A.append([])
+            XkpAll_A.append([])
+            XpAll_B.append([])
+            XkpAll_B.append([])
 
             xyRawAll.append([])
 
@@ -1076,7 +1121,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             matchResAll.append([])
 
-            XAll.append([])
+            XAll_A.append([])
+            XAll_B.append([])
 
         selectedHST1PassFiles = []
         selectedImageFiles    = []
@@ -1224,14 +1270,22 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             Xp, scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
 
-                            Xkp = np.zeros((Xp.shape[0], self.nParsK * (self.nParsP - self.nParsPIndiv)))
+                            Xkp_A = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_A))
+                            Xkp_B = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_B))
 
-                            for p in range(self.nParsPIndiv, self.nParsP):
+                            for ii, p in enumerate(self.splineParsIndices_A):
                                 for k in range(self.nParsK):
-                                    Xkp[:, (p - self.nParsPIndiv) * self.nParsK + k] = Xt[0, k] * Xp[:, p]
+                                    Xkp_A[:, ii * self.nParsK + k] = Xt[0,k] * Xp[:, p]
 
-                            XpAll[jjj].append(Xp[:, :self.nParsPIndiv])
-                            XkpAll[jjj].append(sparse.csr_matrix(Xkp, dtype='d'))
+                            for ii, p in enumerate(self.splineParsIndices_B):
+                                for k in range(self.nParsK):
+                                    Xkp_B[:, ii * self.nParsK + k] = Xt[0,k] * Xp[:, p]
+
+                            XpAll_A[jjj].append(Xp[:, self.indivParsIndices_A])
+                            XpAll_B[jjj].append(Xp[:, self.indivParsIndices_B])
+
+                            XkpAll_A[jjj].append(sparse.csr_matrix(Xkp_A, dtype='d'))
+                            XkpAll_B[jjj].append(sparse.csr_matrix(Xkp_B, dtype='d'))
 
                             centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
 
@@ -1294,17 +1348,22 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             dyAll[jjj]   = np.hstack(dyAll[jjj])
             rollAll[jjj] = np.hstack(rollAll[jjj])
 
-            XAll[jjj] = sparse.hstack([sparse.block_diag(XpAll[jjj], format='csr'), sparse.vstack(XkpAll[jjj])])
+            XAll_A[jjj] = sparse.hstack([sparse.block_diag(XpAll_A[jjj], format='csr'), sparse.vstack(XkpAll_A[jjj])])
+            XAll_B[jjj] = sparse.hstack([sparse.block_diag(XpAll_B[jjj], format='csr'), sparse.vstack(XkpAll_B[jjj])])
 
             xyRawAll[jjj] = np.vstack(xyRawAll[jjj])
 
             matchResAll[jjj] = np.vstack(matchResAll[jjj])
 
-            XpAll[jjj] = None
-            XkpAll[jjj] = None
+            XpAll_A[jjj]  = None
+            XpAll_B[jjj]  = None
+            XkpAll_A[jjj] = None
+            XkpAll_B[jjj] = None
 
-        del XpAll
-        del XkpAll
+        del XpAll_A
+        del XkpAll_A
+        del XpAll_B
+        del XkpAll_B
         gc.collect()
 
         elapsedTime = time.time() - startTime
@@ -1386,18 +1445,23 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         nImages = nOkay
 
-        print("N_PARS_P = {0:d} (P_ORDER = {1:d})".format(self.nParsP, self.pOrder))
         print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
 
-        P = nImages * self.nParsPIndiv + (self.nParsP - self.nParsPIndiv) * self.nParsK
+        P_A = nImages * self.nParsIndiv_A + self.nParsK * self.nParsSpline_A
+        P_B = nImages * self.nParsIndiv_B + self.nParsK * self.nParsSpline_B
 
-        print("P = {0:d}".format(P))
+        print("P_A = {0:d}".format(P_A))
+        print("P_B = {0:d}".format(P_B))
         print("N =", nDataAll)
 
-        scalerArrayAll = np.zeros(P)
+        scalerArrayAll_A = np.zeros(P_A)
+        scalerArrayAll_B = np.zeros(P_B)
 
-        scalerArrayAll[:nImages * self.nParsPIndiv]  = np.tile(scalerArray[:self.nParsPIndiv], nImages)
-        scalerArrayAll[nImages  * self.nParsPIndiv:] = np.repeat(scalerArray[self.nParsPIndiv:], self.nParsK)
+        scalerArrayAll_A[:nImages * self.nParsIndiv_A]  = np.tile(scalerArray[self.indivParsIndices_A], nImages)
+        scalerArrayAll_A[nImages  * self.nParsIndiv_A:] = np.repeat(scalerArray[self.splineParsIndices_A], self.nParsK)
+
+        scalerArrayAll_B[:nImages * self.nParsIndiv_B]  = np.tile(scalerArray[self.indivParsIndices_B], nImages)
+        scalerArrayAll_B[nImages  * self.nParsIndiv_B:] = np.repeat(scalerArray[self.splineParsIndices_B], self.nParsK)
 
         N_ITER_OUTER = 10
         N_ITER_INNER = 100
@@ -1456,7 +1520,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 tObs      = tAll[jjj]
                 rootnames = rootnamesAll[jjj]
 
-                X = deepcopy(XAll[jjj])
+                X_A = deepcopy(XAll_A[jjj])
+                X_B = deepcopy(XAll_B[jjj])
 
                 ## Initialize the reference coordinates
                 xiRef  = deepcopy(xiAll[jjj])
@@ -1521,18 +1586,19 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         W = sparse.spdiags([weights], 0)
 
-                        A = X.T @ W @ X
+                        A_A = X_A.T @ W @ X_A
+                        A_B = X_B.T @ W @ X_B
 
-                        b_xi  = (X.T @ W @ (xiRef / scalerX)).reshape((-1, 1))
-                        b_eta = (X.T @ W @ (etaRef / scalerY)).reshape((-1, 1))
+                        b_xi  = (X_A.T @ W @ (xiRef / scalerX)).reshape((-1, 1))
+                        b_eta = (X_B.T @ W @ (etaRef / scalerY)).reshape((-1, 1))
 
-                        coeffsA, res, rnk, s = linalg.lstsq(A.todense(), b_xi, overwrite_a=True, overwrite_b=True)
+                        coeffsA, res, rnk, s = linalg.lstsq(A_A.todense(), b_xi, overwrite_a=True, overwrite_b=True)
 
-                        coeffsA = coeffsA.flatten() * scalerX / scalerArrayAll
+                        coeffsA = coeffsA.flatten() * scalerX / scalerArrayAll_A
 
-                        coeffsB, res, rnk, s = linalg.lstsq(A.todense(), b_eta, overwrite_a=True, overwrite_b=True)
+                        coeffsB, res, rnk, s = linalg.lstsq(A_B.todense(), b_eta, overwrite_a=True, overwrite_b=True)
 
-                        coeffsB = coeffsB.flatten() * scalerY / scalerArrayAll
+                        coeffsB = coeffsB.flatten() * scalerY / scalerArrayAll_B
                         '''
                         reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
 
@@ -1557,8 +1623,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             np.save(coeffsBFilename, coeffsB)
 
                         ## Residuals already in pixel and in image axis
-                        residualsXi  = xiRef  - ((X.multiply(scalerArrayAll)) @ coeffsA)
-                        residualsEta = etaRef - ((X.multiply(scalerArrayAll)) @ coeffsB)
+                        residualsXi  = xiRef  - ((X_A.multiply(scalerArrayAll_A)) @ coeffsA)
+                        residualsEta = etaRef - ((X_B.multiply(scalerArrayAll_B)) @ coeffsB)
 
                         rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
                         rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
@@ -1755,28 +1821,31 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
                             ## Find the shift and rotation of the reference coordinates
                             ## using the new zero-th order coefficients and rotation angle
-                            thisP = 2
+                            end_A = nImages * self.nParsIndiv_A
+                            end_B = nImages * self.nParsIndiv_B
 
-                            if (thisP <= self.nParsPIndiv):
-                                end = nImages * self.nParsPIndiv
+                            dxs = coeffsA[0:end_A:self.nParsIndiv_A]
+                            dys = coeffsB[0:end_B:self.nParsIndiv_B]
 
-                                dxs = coeffsA[0:end:self.nParsPIndiv]
-                                dys = coeffsB[0:end:self.nParsPIndiv]
-                                rolls = -np.arctan(coeffsA[thisP:end:self.nParsPIndiv] / coeffsB[thisP:end:self.nParsPIndiv])
-                            else:
-                                start = nImages * self.nParsPIndiv + (thisP - self.nParsPIndiv) * self.nParsK
+                            if (self.pOrderIndiv == 0):
+                                coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
+
+                                start = nImages * self.nParsIndiv_B + self.nParsK
                                 end   = start + self.nParsK
 
-                                coeffsA3 = XtAll @ coeffsA[start:end]
                                 coeffsB3 = XtAll @ coeffsB[start:end]
+                            else:
+                                thisP = 2
 
-                                dxs = coeffsA[:nImages]
-                                dys = coeffsB[:nImages]
-                                rolls = -np.arctan(coeffsA3 / coeffsB3)
+                                coeffsA3 = coeffsA[thisP:end_A:self.nParsIndiv_A]
+                                coeffsB3 = coeffsB[thisP:end_B:self.nParsIndiv_B]
+
+                            rolls = -np.arctan(coeffsA3 / coeffsB3)
 
                             break
                         else:
-                            X = X[~rejected]
+                            X_A = X_A[~rejected]
+                            X_B = X_B[~rejected]
 
                             weights = weights[~rejected]
 
@@ -1785,8 +1854,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             xyRaw = xyRaw[~rejected]
 
-                            plateID = plateID[~rejected]
-                            tObs = tObs[~rejected]
+                            plateID   = plateID[~rejected]
+                            tObs      = tObs[~rejected]
                             rootnames = rootnames[~rejected]
 
                 pp1.close()
@@ -1800,8 +1869,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 np.save(finalCoeffsAFilename, coeffsA)
                 np.save(finalCoeffsBFilename, coeffsB)
 
-                xiPred  = (X.multiply(scalerArrayAll)) @ coeffsA
-                etaPred = (X.multiply(scalerArrayAll)) @ coeffsB
+                xiPred  = (X_A.multiply(scalerArrayAll_A)) @ coeffsA
+                etaPred = (X_B.multiply(scalerArrayAll_B)) @ coeffsB
 
                 residualsXi  = xiRef - xiPred
                 residualsEta = etaRef - etaPred
