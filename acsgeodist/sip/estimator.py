@@ -1037,7 +1037,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.nParsK = self.nKnots + self.kOrder  ## Number of B-spline parameters include constant parameter (zero point)
 
         print("INDIVIDUAL PARAMETER INDICES A:", self.indivParsIndices_A, self.nParsIndiv_A)
-        print("INDIVIDUAL PARAMETER INDICES B:", self.indivParsIndices_B, self.nParsIndiv_A)
+        print("INDIVIDUAL PARAMETER INDICES B:", self.indivParsIndices_B, self.nParsIndiv_B)
         print("SPLINE PARAMETER INDICES A:", self.splineParsIndices_A, self.nParsSpline_A)
         print("SPLINE PARAMETER INDICES B:", self.splineParsIndices_B, self.nParsSpline_B)
         print("K_ORDER AND NUMBER OF KNOTS:", self.kOrder, self.nKnots)
