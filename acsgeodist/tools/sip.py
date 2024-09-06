@@ -46,7 +46,7 @@ def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0):
         for jj in range(n - ii):
             pVal = vanderX[:, ii] * vanderY[:, jj]
             sVal = vanderScalerX[:, ii] * vanderScalerY[:, jj]
-            ppp = getUpperTriangularIndex(jj, ii)
+            ppp  = getUpperTriangularIndex(jj, ii)
 
             XModel[:, ppp] = pVal
             scaler[:, ppp] = sVal
