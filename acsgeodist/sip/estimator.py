@@ -1892,11 +1892,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 outTable.write(outTableFilename, overwrite=True)
 
                 print("Residual table written to {0:s}".format(outTableFilename))
-            else:
-                coeffsAFilenames.append(finalCoeffsAFilename)
-                coeffsBFilenames.append(finalCoeffsBFilename)
-                outTableFilenames.append(outTableFilename)
 
+            coeffsAFilenames.append(finalCoeffsAFilename)
+            coeffsBFilenames.append(finalCoeffsBFilename)
+            outTableFilenames.append(outTableFilename)
 
         print("APPLYING TIME-DEPENDENT COEFFICIENTS TO SELECTED HST1PASS FILES...")
         fitResultsFilename = '{0:s}/fitResults_pOrder{1:d}_kOrder{2:d}.txt'.format(outDir, self.pOrder, self.kOrder)
@@ -1992,13 +1991,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                                                       mean,
                                                                                                       np.linalg.inv(cov)))
 
-
                         textResults = ""
                         for chip in chips:
                             startTime = time.time()
 
-                            jj = 2 - chip
+                            jj  = 2 - chip
                             jjj = chip - 1
+
+                            chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj])
 
                             hdu = hduList['SCI', chip]
 
@@ -2087,79 +2087,79 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             XCorr = hst1pass['xPred'][selection].value
                             YCorr = hst1pass['yPred'][selection].value
 
-                            print(selection[selection].shape)
-                            print(XCorr.shape, YCorr.shape, refStarIdx.shape)
+                            CDMatrix = np.full((2, 3), np.nan)
 
-                            for iteration3 in range(N_ITER_CD):
-                                ## Calculate the normal coordinates relative to the pqr triad centered on the current CRVAL1,2
-                                self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef, pqr0Im)
+                            if (selection[selection].size > 10):
+                                for iteration3 in range(N_ITER_CD):
+                                    ## Calculate the normal coordinates relative to the pqr triad centered on the current CRVAL1,2
+                                    self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef, pqr0Im)
 
-                                ## The reference coordinates used for regression of the CD matrix is relative to the current
-                                ## CRVAL1, CRVAL2 coordinates
-                                xiRef  = (self.refCat['xi'][refStarIdx].value  * u.arcsec).to(u.deg) / vaFactor
-                                etaRef = (self.refCat['eta'][refStarIdx].value * u.arcsec).to(u.deg) / vaFactor
+                                    ## The reference coordinates used for regression of the CD matrix is relative to the current
+                                    ## CRVAL1, CRVAL2 coordinates
+                                    xiRef  = (self.refCat['xi'][refStarIdx].value  * u.arcsec).to(u.deg) / vaFactor
+                                    etaRef = (self.refCat['eta'][refStarIdx].value * u.arcsec).to(u.deg) / vaFactor
 
-                                ## Store the reference coordinates back in pixel scale
-                                hst1pass['xiRef'][selection] = xiRef.to_value(
-                                    u.arcsec) / acsconstants.ACS_PLATESCALE.to_value(
-                                    u.arcsec / u.pix)
-                                hst1pass['etaRef'][selection] = etaRef.to_value(
-                                    u.arcsec) / acsconstants.ACS_PLATESCALE.to_value(
-                                    u.arcsec / u.pix)
+                                    ## Store the reference coordinates back in pixel scale
+                                    hst1pass['xiRef'][selection] = xiRef.to_value(
+                                        u.arcsec) / acsconstants.ACS_PLATESCALE.to_value(
+                                        u.arcsec / u.pix)
+                                    hst1pass['etaRef'][selection] = etaRef.to_value(
+                                        u.arcsec) / acsconstants.ACS_PLATESCALE.to_value(
+                                        u.arcsec / u.pix)
 
-                                ## Calculate the CD Matrix that transform the corrected coordinates
-                                ## XCorr, YCorr into normal coordinates Xi, Eta
-                                CDMatrix = self._getCDMatrix(XCorr, YCorr, xiRef.value, etaRef.value,
-                                                             weights=hst1pass['weights'][selection].value)
+                                    ## Calculate the CD Matrix that transform the corrected coordinates
+                                    ## XCorr, YCorr into normal coordinates Xi, Eta
+                                    CDMatrix = self._getCDMatrix(XCorr, YCorr, xiRef.value, etaRef.value,
+                                                                 weights=hst1pass['weights'][selection].value)
 
-                                ## Replace the CRVAL1, CRVAL2 coordinates using the constants of the CD Matrix
-                                c0Im = coords.getCelestialCoordinatesFromNormalCoordinates(CDMatrix[0, 0] * u.deg,
-                                                                                           CDMatrix[1, 0] * u.deg, c0Im,
-                                                                                           frame='icrs')
+                                    ## Replace the CRVAL1, CRVAL2 coordinates using the constants of the CD Matrix
+                                    c0Im = coords.getCelestialCoordinatesFromNormalCoordinates(CDMatrix[0, 0] * u.deg,
+                                                                                               CDMatrix[1, 0] * u.deg, c0Im,
+                                                                                               frame='icrs')
 
-                                ## Replace the triad pqr_0 using the new value of CRVAL1, CRVAL2
-                                pqr0Im = coords.getNormalTriad(c0Im)
+                                    ## Replace the triad pqr_0 using the new value of CRVAL1, CRVAL2
+                                    pqr0Im = coords.getNormalTriad(c0Im)
 
-                                ## Apply the CD Matrix to all sources in the chip, in order to obtain the new normal coordinates
-                                selectionChip = hst1pass['k'] == chip
+                                    ## Apply the CD Matrix to all sources in the chip, in order to obtain the new normal coordinates
+                                    selectionChip = hst1pass['k'] == chip
 
-                                H, _ = sip.buildModel(hst1pass['xPred'][selectionChip].value,
-                                                      hst1pass['yPred'][selectionChip].value,
-                                                      1)
+                                    H, _ = sip.buildModel(hst1pass['xPred'][selectionChip].value,
+                                                          hst1pass['yPred'][selectionChip].value,
+                                                          1)
 
-                                ## Calculate the normal coordinates Xi, Eta and assign them to the table
-                                hst1pass['xi'][selectionChip] = (
-                                        ((H @ CDMatrix[0]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
-                                hst1pass['eta'][selectionChip] = (
-                                        ((H @ CDMatrix[1]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
+                                    ## Calculate the normal coordinates Xi, Eta and assign them to the table
+                                    hst1pass['xi'][selectionChip] = (
+                                            ((H @ CDMatrix[0]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
+                                    hst1pass['eta'][selectionChip] = (
+                                            ((H @ CDMatrix[1]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
 
-                                ## Calculate the residuals
-                                hst1pass['resXi'][selection] = (
-                                        hst1pass['xi'][selection].value - hst1pass['xiRef'][selection].value)
-                                hst1pass['resEta'][selection] = (
-                                        hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
+                                    ## Calculate the residuals
+                                    hst1pass['resXi'][selection] = (
+                                            hst1pass['xi'][selection].value - hst1pass['xiRef'][selection].value)
+                                    hst1pass['resEta'][selection] = (
+                                            hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
 
-                                print("CD_ITERATION:", (iteration3 + 1))
-                                print(CDMatrix)
-                                print(hst1pass['resXi', 'resEta'][selection].to_pandas().describe())
+                                    ## print("CD_ITERATION:", (iteration3 + 1))
+                                    ## print(CDMatrix)
+                                    ## print(hst1pass['resXi', 'resEta'][selection].to_pandas().describe())
 
-                                ## Re-calculate the weights for the next iteration, in case it's not a plate used for
-                                ## time-dependendent model calculation
-                                if (resids_indices.size <= 0):
-                                    residuals = np.vstack([hst1pass[selection]['resXi'].value,
-                                                           hst1pass[selection]['resEta'].value]).T
+                                    ## Re-calculate the weights for the next iteration, in case it's not a plate used for
+                                    ## time-dependendent model calculation
+                                    if (resids_indices.size <= 0):
+                                        residuals = np.vstack([hst1pass[selection]['resXi'].value,
+                                                               hst1pass[selection]['resEta'].value]).T
 
-                                    ## Use the weights to estimate the mean and covariance matrix of the residual distribution
-                                    mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals,
-                                                                                           hst1pass[selection]['weights'].value)
+                                        ## Use the weights to estimate the mean and covariance matrix of the residual distribution
+                                        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals,
+                                                                                               hst1pass[selection]['weights'].value)
 
-                                    ## Assign weights based on the standardized distance of the residuals from the mean
-                                    hst1pass[selection]['weights'] = stat.wdecay(stat.getMahalanobisDistances(residuals,
-                                                                                                              mean,
-                                                                                                              np.linalg.inv(
-                                                                                                                  cov)))
+                                        ## Assign weights based on the standardized distance of the residuals from the mean
+                                        hst1pass[selection]['weights'] = stat.wdecay(stat.getMahalanobisDistances(residuals,
+                                                                                                                  mean,
+                                                                                                                  np.linalg.inv(
+                                                                                                                      cov)))
 
-                            alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
+                                alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
 
                             xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
 
@@ -2180,15 +2180,18 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             hst1pass['resEta'][selection] = (
                                     hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
 
-                            rmsXi  = np.sqrt(np.average(hst1pass['resXi'][selection].value**2,
-                                                        weights=hst1pass['weights'][selection].value))
-                            rmsEta = np.sqrt(np.average(hst1pass['resEta'][selection].value**2,
-                                                        weights=hst1pass['weights'][selection].value))
+                            rmsXi  = np.nan
+                            rmsEta = np.nan
+                            if (np.sum(hst1pass['weights'][selection].value) > 0):
+                                rmsXi  = np.sqrt(np.average(hst1pass['resXi'][selection].value**2,
+                                                            weights=hst1pass['weights'][selection].value))
+                                rmsEta = np.sqrt(np.average(hst1pass['resEta'][selection].value**2,
+                                                            weights=hst1pass['weights'][selection].value))
 
                             textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
                                 baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1,
                                 posTarg2)
-                            textResults += " {0:d} {1:d}".format(np.nan, nStars)
+                            textResults += " {0:d} {1:d}".format(0, nStars)
                             textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                             textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
                             textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
@@ -2198,6 +2201,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 textResults += " {0:0.12e}".format(coeffA)
                                 textResults += " {0:0.12e}".format(coeffB)
                             textResults += "\n"
+
+                            print("RESIDUALS FOR {0:s}".format(chipTitle))
+                            print(hst1pass.to_pandas().loc[selection, ['resXi', 'resEta']].describe())
 
                             elapsedTime = time.time() - startTime
                             print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
