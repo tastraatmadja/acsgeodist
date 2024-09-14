@@ -1045,7 +1045,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         print("K_ORDER AND NUMBER OF KNOTS:", self.kOrder, self.nKnots)
         print("NUMBER OF B-SPLINE PARAMETERS (PER COEFFICIENT):", self.nParsK)
 
-        self.tKnot  = np.linspace(self.tMin, self.tMax, nKnots, endpoint=True)
+        self.tKnot  = np.linspace(self.tMin, self.tMax, self.nKnots, endpoint=True)
         self.dtKnot = self.tKnot[1] - self.tKnot[0]
 
         self.min_t_exp     = min_t_exp
@@ -2197,7 +2197,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
                                                                                              CDMatrix[1, 1], CDMatrix[0, 2])
 
-                            for coeffA, coeffB in zip(coeffsA, coeffsB):
+                            for coeffA, coeffB in zip(thisCoeffsA, thisCoeffsB):
                                 textResults += " {0:0.12e}".format(coeffA)
                                 textResults += " {0:0.12e}".format(coeffB)
                             textResults += "\n"
