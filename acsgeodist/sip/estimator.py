@@ -2183,10 +2183,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             rmsXi  = np.nan
                             rmsEta = np.nan
                             if (np.sum(hst1pass['weights'][selection].value) > 0):
-                                rmsXi  = np.sqrt(np.average(hst1pass['resXi'][selection].value**2,
-                                                            weights=hst1pass['weights'][selection].value))
-                                rmsEta = np.sqrt(np.average(hst1pass['resEta'][selection].value**2,
-                                                            weights=hst1pass['weights'][selection].value))
+                                rmsXi  = np.sqrt(stat.getWeightedAverage(hst1pass['resXi'][selection].value ** 2,
+                                                                         hst1pass['weights'][selection].value))
+                                rmsEta = np.sqrt(stat.getWeightedAverage(hst1pass['resEta'][selection].value ** 2,
+                                                                         hst1pass['weights'][selection].value))
 
                             textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
                                 baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1,

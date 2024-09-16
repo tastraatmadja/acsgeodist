@@ -111,3 +111,7 @@ def addLnProb(lnP1, lnP2):
             return lnP1
         else:
             return lnP2
+
+def getWeightedAverage(x, weights):
+    selection = np.isfinite(x) & np.isfinite(weights)
+    return np.average(x[selection], weights=weights[selection])
