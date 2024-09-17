@@ -2182,11 +2182,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             rmsXi  = np.nan
                             rmsEta = np.nan
-                            test   = (np.isfinite(hst1pass['resXi'][selection].value) &
-                                      np.isfinite(hst1pass['resEta'][selection].value) &
-                                      np.isfinite(hst1pass['weights'][selection].value))
 
-                            if test:
+                            residual_selection = (np.isfinite(hst1pass['resXi'][selection].value) &
+                                                  np.isfinite(hst1pass['resEta'][selection].value) &
+                                                  np.isfinite(hst1pass['weights'][selection].value))
+
+                            if (np.sum(hst1pass['weights'][selection].value) > 0) and (residual_selection[residual_selection].size > 0):
                                 rmsXi  = np.sqrt(stat.getWeightedAverage(hst1pass['resXi'][selection].value ** 2,
                                                                          hst1pass['weights'][selection].value))
                                 rmsEta = np.sqrt(stat.getWeightedAverage(hst1pass['resEta'][selection].value ** 2,
