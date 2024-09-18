@@ -343,7 +343,7 @@ class SIPEstimator():
                             coeffs[0::2] = coeffsA
                             coeffs[1::2] = coeffsB
 
-                            xiPred = np.matmul(X * scalerArray, coeffs[0::2])
+                            xiPred  = np.matmul(X * scalerArray, coeffs[0::2])
                             etaPred = np.matmul(X * scalerArray, coeffs[1::2])
 
                             ## Residuals already in pixel and in image axis
