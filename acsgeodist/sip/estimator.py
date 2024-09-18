@@ -700,6 +700,20 @@ class SIPEstimator():
                     hst1pass['resEta'][selection] = (
                             hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
 
+                    rmsXi  = np.nan
+                    rmsEta = np.nan
+
+                    residual_selection = (np.isfinite(hst1pass['resXi'][selection].value) &
+                                          np.isfinite(hst1pass['resEta'][selection].value) &
+                                          np.isfinite(hst1pass['weights'][selection].value))
+
+                    if (np.sum(hst1pass['weights'][selection].value) > 0) and (
+                            residual_selection[residual_selection].size > 0):
+                        rmsXi  = np.sqrt(stat.getWeightedAverage(hst1pass['resXi'][selection].value ** 2,
+                                                                hst1pass['weights'][selection].value))
+                        rmsEta = np.sqrt(stat.getWeightedAverage(hst1pass['resEta'][selection].value ** 2,
+                                                                 hst1pass['weights'][selection].value))
+
                     textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
                         baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
                     textResults += " {0:d} {1:d}".format(nIterTotal, nStars)
