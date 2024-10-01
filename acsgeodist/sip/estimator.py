@@ -35,7 +35,7 @@ WIDTH   = HEIGHT
 N_PARS_LINE  = 2
 N_PARS_CONST = 1
 
-## For cross-matching, select only Gaia sources with good astrometry measurements
+## For cross-matching, select only Gaia sources with good astrometry_old measurements
 MIN_RUWE = 0.8
 MAX_RUWE = 1.2
 

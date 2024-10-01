@@ -15,4 +15,10 @@ def readFitResults(fitResultsFilename, pOrder):
 
             columns.append(coeffName)
 
-    return pd.read_csv(fitResultsFilename, sep='\s+', header=None, comment='#', names=columns)
+    if hasattr(fitResultsFilename, '__iter__'):
+        df_fitResults = []
+        for filename in fitResultsFilename:
+            df_fitResults.append(pd.read_csv(filename, sep='\s+', header=None, comment='#', names=columns))
+        return pd.concat(df_fitResults)
+    else:
+        return pd.read_csv(fitResultsFilename, sep='\s+', header=None, comment='#', names=columns)

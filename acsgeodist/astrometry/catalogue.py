@@ -12,16 +12,13 @@ import time
 
 N_WRITE = 100
 class SourceCollector():
-    def __init__(self):
+    def __init__(self, min_t_exp=None, min_n_stars=None, max_pos_targs=None, max_sep=None, min_n_epoch=None):
         self.min_t_exp     = 0.0
         self.min_n_stars   = 0
         self.max_pos_targs = np.inf
         self.max_sep       = 1.0 * u.pix
-        self.min_n_epoch   = 3
+        self.min_n_epoch   = 5
 
-    def collectIndividualSources(self, fitSummaryTableFilename, residsFilenames, c0, pmDir, pOrder=5, min_t_exp=None,
-                                 min_n_stars=None, max_pos_targs=None, max_sep=None, min_n_epoch=None):
-        startTimeAll = time.time()
         if (min_t_exp is not None):
             self.min_t_exp = min_t_exp
         if (min_n_stars is not None):
@@ -33,7 +30,13 @@ class SourceCollector():
         if (min_n_epoch is not None):
             self.min_n_epoch = min_n_epoch
 
-        df_fitResults = reader.readFitResults(fitSummaryTableFilename, pOrder)
+    def collectIndividualSources(self, fitSummaryTableFilenames, residsFilenames, c0, pOrder=5, outDir='./'):
+        if not os.path.exists(outDir):
+            os.makedirs(outDir)
+
+        startTimeAll = time.time()
+
+        df_fitResults = reader.readFitResults(fitSummaryTableFilenames, pOrder)
 
         ## Organize the filenames by epoch
         df_fitResults['i']   = [rootname.replace('_flc', '')[0] for rootname in df_fitResults['rootname']]
@@ -114,12 +117,9 @@ class SourceCollector():
         df_timeBins = pd.DataFrame(
             data={'epochID': np.arange(0, tBins.size - 1, dtype=int), 'tMin': tBins[0:-1], 'tMax': tBins[1:]})
 
-        df_timeBins.to_csv('{0:s}/time_bins.csv'.format(pmDir))
+        df_timeBins.to_csv('{0:s}/time_bins.csv'.format(outDir))
 
         nFiles = len(residsFilenames)
-
-        if not os.path.exists(pmDir):
-            os.makedirs(pmDir)
 
         obsData  = {}
         nObsData = {}
@@ -130,19 +130,19 @@ class SourceCollector():
 
         fileDone = []
 
-        fileDoneFilename = '{0:s}/fileDone.csv'.format(pmDir)
+        fileDoneFilename = '{0:s}/fileDone.csv'.format(outDir)
         if os.path.exists(fileDoneFilename):
             df_fileDone = pd.read_csv(fileDoneFilename)
             fileDone = list(df_fileDone['rootname'])
 
-        nObsDataFilename = '{0:s}/nObsData.csv'.format(pmDir)
+        nObsDataFilename = '{0:s}/nObsData.csv'.format(outDir)
         if os.path.exists(nObsDataFilename):
             df_nObs = pd.read_csv(nObsDataFilename)
 
             for i, name in enumerate(list(df_nObs['source_id'])):
                 nObsData[name] = df_nObs.iloc[i]['nObs']
 
-        obsDataFilename = '{0:s}/47Tuc_allSources_individualObservations.h5'.format(pmDir)
+        obsDataFilename = '{0:s}/47Tuc_allSources_individualObservations.h5'.format(outDir)
 
         nRowsTotal   = 0
         thisFileDone = []
@@ -166,7 +166,7 @@ class SourceCollector():
 
             posTargResultant = np.sqrt(posTarg1 ** 2 + posTarg2 ** 2)
 
-            process = (tExp > self.min_t_exp) and (nStars > self.min_n_stars) and (posTargResultant < self.max_pos_targs)
+            process = (tExp > self.min_t_exp) and (nStars > self.min_n_stars) and (posTargResultant <= self.max_pos_targs)
 
             print(i, os.path.basename(residsFilename), rootname, epochID, tExp, nStars, posTargResultant, "PROCESS:", process, end='')
 
@@ -179,7 +179,7 @@ class SourceCollector():
                 print(" DONE:", done, end='')
 
                 if (not done):
-                    print('.')
+                    print('. PROCESSING...')
                     df_resids = pd.read_csv(residsFilename)
 
                     xi  = (df_resids['xi'].values * u.pix)  * acsconstants.ACS_PLATESCALE
@@ -335,7 +335,7 @@ class SourceCollector():
                 ## Writing the number of observations for individual sources
                 df_nObs = pd.DataFrame.from_dict({'source_id': list(nObsData.keys()), 'nObs': list(nObsData.values()),
                                                   'nEpochs': list(nEpochs.values())})
-                df_nObs.to_csv('{0:s}/nObsData.csv'.format(pmDir), index=False)
+                df_nObs.to_csv('{0:s}/nObsData.csv'.format(outDir), index=False)
 
                 df_fileDone = pd.DataFrame.from_dict({'rootname': fileDone})
                 df_fileDone.to_csv(fileDoneFilename, index=False)
