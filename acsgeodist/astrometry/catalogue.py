@@ -19,8 +19,8 @@ class SourceCollector():
                  min_n_epoch=None):
         self.qMin          = 1.e-6
         self.qMax          = 0.5
-        self.min_t_exp     = 0.0
-        self.min_n_stars   = 0
+        self.min_t_exp     = 99.0
+        self.min_n_stars   = 10000
         self.max_pos_targs = np.inf
         self.max_sep       = 1.0 * u.pix
         self.min_n_epoch   = 5
