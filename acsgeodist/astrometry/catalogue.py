@@ -14,7 +14,7 @@ from acsgeodist.tools import astro, coords, reader
 from acsgeodist.tools.time import convertTime
 
 N_WRITE = 100
-class SourceCollector():
+class SourceCollector:
     def __init__(self, qMin=None, qMax=None, min_t_exp=None, min_n_stars=None, max_pos_targs=None, max_sep=None,
                  min_n_epoch=None):
         self.qMin          = 1.e-6
@@ -304,3 +304,5 @@ class SourceCollector():
         elapsedTime = time.time() - startTimeAll
 
         print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
+
+class FrameScaler():

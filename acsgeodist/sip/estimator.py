@@ -66,7 +66,7 @@ dY, dMY = 500, 100
 
 xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 
-class SIPEstimator():
+class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, make_lithographic_and_filter_mask_corrections=True, cross_match=True):
         self.refCat        = deepcopy(referenceCatalog)
