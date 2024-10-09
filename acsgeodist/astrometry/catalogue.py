@@ -304,5 +304,3 @@ class SourceCollector:
         elapsedTime = time.time() - startTimeAll
 
         print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
-
-class FrameScaler():
