@@ -454,93 +454,93 @@ class SourceCollector:
 
                             mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res, weights)
 
-                        z = stat.getMahalanobisDistances(res, mean, np.array([1.0 / cov]))
+                            z = stat.getMahalanobisDistances(res, mean, np.array([1.0 / cov]))
 
-                        '''
-                        if (np.nansum(stat.wdecay(z)) <= 0.0):
-                            break
-                        ''';
+                            '''
+                            if (np.nansum(stat.wdecay(z)) <= 0.0):
+                                break
+                            ''';
 
-                        ## We now use the z statistics to re-calculate the weights
-                        weights = stat.wdecay(z)
+                            ## We now use the z statistics to re-calculate the weights
+                            weights = stat.wdecay(z)
 
-                        W = sparse.diags(weights)
+                            W = sparse.diags(weights)
 
-                    solutions.append(astro_solution)
+                        solutions.append(astro_solution)
 
-                    XTWX = X[model].T @ W @ X[model]
+                        XTWX = X[model].T @ W @ X[model]
 
-                    covs.append(mse * linalg.inv(XTWX))
+                        covs.append(mse * linalg.inv(XTWX))
 
-                    rms.append(np.sqrt(mse))
+                        rms.append(np.sqrt(mse))
 
-                    nEff.append(0.5 * np.nansum(weights))
+                        nEff.append(0.5 * np.nansum(weights))
 
-                    ## covs.append(list(cov[triu_indices[model]].flatten()))
+                        ## covs.append(list(cov[triu_indices[model]].flatten()))
 
-                    lnLL[model] = stat.getLnLL(res, weights)
+                        lnLL[model] = stat.getLnLL(res, weights)
 
-                    lnPMD[model] = stat.getLnPMD(N_PARAMS[model], res, LOG_PM[model], weights=weights)
+                        lnPMD[model] = stat.getLnPMD(N_PARAMS[model], res, LOG_PM[model], weights=weights)
 
-                    LR[model] = -2.0 * (prevLnLL - lnLL[model])
+                        LR[model] = -2.0 * (prevLnLL - lnLL[model])
 
-                    pVal[model] = stats.chi2.sf(LR[model], N_PARAMS[model] - prevNPars)
+                        pVal[model] = stats.chi2.sf(LR[model], N_PARAMS[model] - prevNPars)
 
-                    nSigma[model] = stats.norm.ppf(1.0 - 0.5 * pVal[model])
+                        nSigma[model] = stats.norm.ppf(1.0 - 0.5 * pVal[model])
 
-                    if (nSigma[model] > SIGMA_THRESHOLD):
-                        bestModel = model
+                        if (nSigma[model] > SIGMA_THRESHOLD):
+                            bestModel = model
 
-                    ## print(model, astro_solution, np.sqrt(np.nanmean(res**2)), lnLL[model], LR[model], pVal[model], nSigma[model], lnPMD[model])
+                        ## print(model, astro_solution, np.sqrt(np.nanmean(res**2)), lnLL[model], LR[model], pVal[model], nSigma[model], lnPMD[model])
 
-                    lnPSum = stat.addLnProb(lnPSum, lnPMD[model])
+                        lnPSum = stat.addLnProb(lnPSum, lnPMD[model])
 
-                    prevLnLL = lnLL[model]
-                    prevNPars = N_PARAMS[model]
+                        prevLnLL = lnLL[model]
+                        prevNPars = N_PARAMS[model]
 
-                pMD = np.exp(lnPMD - lnPSum)
+                    pMD = np.exp(lnPMD - lnPSum)
 
-                ## bestModel = np.argmax(lnPMD)
+                    ## bestModel = np.argmax(lnPMD)
 
-                bestSolution = np.zeros(N_PARAMS[-1])
-                bestSolution[0:solutions[bestModel].size] = solutions[bestModel]
+                    bestSolution = np.zeros(N_PARAMS[-1])
+                    bestSolution[0:solutions[bestModel].size] = solutions[bestModel]
 
-                bestCov = np.zeros((N_PARAMS[-1], N_PARAMS[-1]))
+                    bestCov = np.zeros((N_PARAMS[-1], N_PARAMS[-1]))
 
-                bestCov[triu_indices[bestModel]] = covs[bestModel][triu_indices[bestModel]]
+                    bestCov[triu_indices[bestModel]] = covs[bestModel][triu_indices[bestModel]]
 
-                bestCov = bestCov[triu_indices_all].flatten()
+                    bestCov = bestCov[triu_indices_all].flatten()
 
-                bestRMS = rms[bestModel]
+                    bestRMS = rms[bestModel]
 
-                bestNEff = nEff[bestModel]
+                    bestNEff = nEff[bestModel]
 
-                ## print("BEST_MODEL:", bestModel, nSigma[bestModel], pMD[bestModel], bestSolution)
-                ## print(bestSolution.shape, bestCov.shape)
+                    ## print("BEST_MODEL:", bestModel, nSigma[bestModel], pMD[bestModel], bestSolution)
+                    ## print(bestSolution.shape, bestCov.shape)
 
-                tMin = df['time_ut1'].min()
-                tMax = df['time_ut1'].max()
+                    tMin = df['time_ut1'].min()
+                    tMax = df['time_ut1'].max()
 
-                df['flux'] = 10.00 ** (-0.4 * df['W'])
+                    df['flux'] = 10.00 ** (-0.4 * df['W'])
 
-                meanMag = -2.5 * np.log10(df['flux'].mean())
-                medianQ = df['q'].median()
+                    meanMag = -2.5 * np.log10(df['flux'].mean())
+                    medianQ = df['q'].median()
 
-                dataLine = [sourceID, tMin, tMax, nObs, nEpochs, meanMag, medianQ, bestModel + 1, LR[bestModel],
-                            pVal[bestModel], nSigma[bestModel], pMD[bestModel], bestRMS, bestNEff]
-                dataLine.extend(list(bestSolution))
-                dataLine.extend(list(bestCov))
+                    dataLine = [sourceID, tMin, tMax, nObs, nEpochs, meanMag, medianQ, bestModel + 1, LR[bestModel],
+                                pVal[bestModel], nSigma[bestModel], pMD[bestModel], bestRMS, bestNEff]
+                    dataLine.extend(list(bestSolution))
+                    dataLine.extend(list(bestCov))
 
-                df_ppm = pd.concat([df_ppm, pd.DataFrame([dataLine], columns=columns)], ignore_index=True)
+                    df_ppm = pd.concat([df_ppm, pd.DataFrame([dataLine], columns=columns)], ignore_index=True)
 
-            if (((i % nPrint) == 0) and (i > 0)):
-                elapsedTime = time.time() - startTimeAll
-                print("DONE PROCESSING {0:d} SOURCES! ELAPSED TIME: {1:s}".format(i + 1, convertTime(elapsedTime)))
+                if (((i % nPrint) == 0) and (i > 0)):
+                    elapsedTime = time.time() - startTimeAll
+                    print("DONE PROCESSING {0:d} SOURCES! ELAPSED TIME: {1:s}".format(i + 1, convertTime(elapsedTime)))
 
-            '''
-            if (i > 1000):
-                break
-            '''
+                '''
+                if (i > 1000):
+                    break
+                ''';
 
             storeIn.close()
 
