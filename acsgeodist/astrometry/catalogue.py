@@ -5,15 +5,41 @@ import time
 from astropy import coordinates
 from astropy import units as u
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
+from astroquery.gaia import Gaia
 from copy import deepcopy
 import numpy as np
 import pandas as pd
+from scipy import linalg, sparse, stats
+from sklearn.linear_model import LinearRegression
 
 from acsgeodist import acsconstants
-from acsgeodist.tools import astro, coords, reader
+from acsgeodist.tools import astro, coords, reader, sip, stat
 from acsgeodist.tools.time import convertTime
 
 N_WRITE = 100
+
+MIN_N_EPOCH = 5
+
+MIN_N_OBS = 3
+
+ONE_SIGMA   = 68.2689492
+THREE_SIGMA = 99.7300204
+
+SIGMA_THRESHOLD = 3.0
+
+N_PARAMS = np.array([2, 4, 5])
+
+PM = np.full_like(N_PARAMS, 1.0 / 3.0, dtype=float)
+
+LOG_PM = np.log(PM)
+
+HEIGHT  = 0.5 * u.deg
+WIDTH   = HEIGHT
+
+MIN_RUWE = 0.8
+MAX_RUWE = 1.2
+
 class SourceCollector:
     def __init__(self, qMin=None, qMax=None, min_t_exp=None, min_n_stars=None, max_pos_targs=None, max_sep=None,
                  min_n_epoch=None):
@@ -290,7 +316,7 @@ class SourceCollector:
 
                 ## Writing the number of observations for individual sources
                 df_nObs = pd.DataFrame.from_dict({'source_id': names, 'nObs': nObsData, 'nEpochs': nEpochs})
-                df_nObs.to_csv('{0:s}/nObsData.csv'.format(outDir), index=False)
+                df_nObs.to_csv(nObsDataFilename, index=False)
 
                 df_fileDone = pd.DataFrame.from_dict({'rootname': fileDone})
                 df_fileDone.to_csv(fileDoneFilename, index=False)
@@ -304,3 +330,333 @@ class SourceCollector:
         elapsedTime = time.time() - startTimeAll
 
         print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
+
+        return obsDataFilenameAll, nObsDataFilename
+
+    def calculateAstrometricSolutions(self, obsDataFilename, nObsDataFilename, c0, refPix_x=None, refPix_y=None,
+                                      maxNModel=2, nIter=5, tRef=2016.0, outDir='./', reOrientFrame=True):
+        properMotionFilename = '{0:s}/47Tuc_PPMPLXCatalogue_modelSelection_weightedRegression_tRef{1:0.1f}.csv'.format(
+            outDir, tRef)
+
+        if (not os.path.exists(properMotionFilename)):
+            triu_indices = []
+            for model in range(maxNModel):
+                triu_indices.append(np.triu_indices(N_PARAMS[model]))
+
+            triu_indices_all = np.triu_indices(N_PARAMS[-1])
+
+            df_nObs = pd.read_csv(nObsDataFilename)
+
+            df_nObs[['nObs', 'nEpochs']].describe()
+
+            selection = df_nObs['nEpochs'] >= MIN_N_EPOCH
+
+            print("SELECTED {0:d} SOURCES!".format(selection[selection].shape[0]))
+
+            ## Now we take the normal triad pqr_0 of the reference coordinate
+            pqr0 = coords.getNormalTriad(c0)
+
+            columns = ['sourceID', 'tMin', 'tMax', 'nObs', 'nEpoch', 'meanMag', 'medianQ', 'bestModel', 'LR', 'pVal',
+                       'nSigma', 'pMD', 'rms', 'nEff', 'xi0', 'eta0', 'pm_xi', 'pm_eta', 'parallax']
+
+            N_COVS = 0
+            for i in range(N_PARAMS[-1]):
+                for j in range(i, N_PARAMS[-1]):
+                    N_COVS += 1
+                    columns.append('cov_{0:d}{1:d}'.format(i, j))
+
+            df_ppm = pd.DataFrame(columns=columns)
+
+            storeIn = pd.HDFStore(obsDataFilename, 'r')
+
+            nPrint = 10000
+            write  = True
+
+            reg = LinearRegression(fit_intercept=False, copy_X=False)
+
+            startTimeAll = time.time()
+
+            for i, sourceID in enumerate(df_nObs[selection]['source_id'].values):
+                if (sourceID in storeIn):
+                    df = storeIn[sourceID]
+
+                    refCatID = df['refCatID'].iloc[0]
+
+                    nEpochs = df['epochID'].unique().size
+
+                    xi = (df['xi'] * df['vaFactor']).values
+                    eta = (df['eta'] * df['vaFactor']).values
+                    t = Time(df['time_ut1'].values, format='decimalyear', scale='ut1')
+
+                    weights_init = np.repeat(df['weights'].values, 2)
+
+                    if (0.5 * np.nansum(weights_init) < MIN_N_OBS):
+                        weights_init = np.repeat(np.ones_like(xi), 2)
+
+                    '''
+                    if (np.sum(weights) <= 0.0):
+                        print(i, sourceID, refCatID, nEpochs, nObs)
+                    ''';
+
+                    '''
+                    if (i == 59714):
+                        print(df['weights'])
+                        print(weights_init)
+                    ''';
+
+                    nObs = t.size
+
+                    ## print(i, sourceID, refCatID, nEpochs, nObs)
+
+                    X = astro.getAstrometricModels(t, tRef, maxNModel=maxNModel, pqr0=pqr0)
+
+                    y = np.zeros((2 * nObs, 1))
+
+                    y[0::2, 0] = xi
+                    y[1::2, 0] = eta
+
+                    lnLL = np.zeros(maxNModel)
+                    LR = np.zeros(maxNModel)
+                    lnPMD = np.zeros(maxNModel)
+                    pVal = np.zeros(maxNModel)
+                    nSigma = np.zeros(maxNModel)
+                    prevNPars = 0
+                    prevLnLL = -np.inf
+                    lnPSum = -np.inf
+                    solutions = []
+                    covs = []
+                    rms = []
+                    nEff = []
+                    for model in range(maxNModel):
+                        weights = deepcopy(weights_init)
+                        W = sparse.diags(weights)
+
+                        for iter in range(nIter):
+                            reg.fit(X[model], y, sample_weight=weights)
+
+                            astro_solution = reg.coef_[0]
+
+                            res = y - reg.predict(X[model])
+
+                            mse = (res.T @ W @ res)[0, 0] / np.sum(weights)
+
+                            '''
+                            if (np.sum(weights) <= 0.0):
+                                print(i, sourceID, refCatID, nEpochs, nObs, mse, model, iter, astro_solution)
+                                print(weights)
+                            ''';
+
+                            '''
+                            if (i == 59714):
+                                print(i, sourceID, refCatID, nEpochs, nObs, mse, model, iter, astro_solution)
+                                print(weights)
+                            ''';
+
+                            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res, weights)
+
+                        z = stat.getMahalanobisDistances(res, mean, np.array([1.0 / cov]))
+
+                        '''
+                        if (np.nansum(stat.wdecay(z)) <= 0.0):
+                            break
+                        ''';
+
+                        ## We now use the z statistics to re-calculate the weights
+                        weights = stat.wdecay(z)
+
+                        W = sparse.diags(weights)
+
+                    solutions.append(astro_solution)
+
+                    XTWX = X[model].T @ W @ X[model]
+
+                    covs.append(mse * linalg.inv(XTWX))
+
+                    rms.append(np.sqrt(mse))
+
+                    nEff.append(0.5 * np.nansum(weights))
+
+                    ## covs.append(list(cov[triu_indices[model]].flatten()))
+
+                    lnLL[model] = stat.getLnLL(res, weights)
+
+                    lnPMD[model] = stat.getLnPMD(N_PARAMS[model], res, LOG_PM[model], weights=weights)
+
+                    LR[model] = -2.0 * (prevLnLL - lnLL[model])
+
+                    pVal[model] = stats.chi2.sf(LR[model], N_PARAMS[model] - prevNPars)
+
+                    nSigma[model] = stats.norm.ppf(1.0 - 0.5 * pVal[model])
+
+                    if (nSigma[model] > SIGMA_THRESHOLD):
+                        bestModel = model
+
+                    ## print(model, astro_solution, np.sqrt(np.nanmean(res**2)), lnLL[model], LR[model], pVal[model], nSigma[model], lnPMD[model])
+
+                    lnPSum = stat.addLnProb(lnPSum, lnPMD[model])
+
+                    prevLnLL = lnLL[model]
+                    prevNPars = N_PARAMS[model]
+
+                pMD = np.exp(lnPMD - lnPSum)
+
+                ## bestModel = np.argmax(lnPMD)
+
+                bestSolution = np.zeros(N_PARAMS[-1])
+                bestSolution[0:solutions[bestModel].size] = solutions[bestModel]
+
+                bestCov = np.zeros((N_PARAMS[-1], N_PARAMS[-1]))
+
+                bestCov[triu_indices[bestModel]] = covs[bestModel][triu_indices[bestModel]]
+
+                bestCov = bestCov[triu_indices_all].flatten()
+
+                bestRMS = rms[bestModel]
+
+                bestNEff = nEff[bestModel]
+
+                ## print("BEST_MODEL:", bestModel, nSigma[bestModel], pMD[bestModel], bestSolution)
+                ## print(bestSolution.shape, bestCov.shape)
+
+                tMin = df['time_ut1'].min()
+                tMax = df['time_ut1'].max()
+
+                df['flux'] = 10.00 ** (-0.4 * df['W'])
+
+                meanMag = -2.5 * np.log10(df['flux'].mean())
+                medianQ = df['q'].median()
+
+                dataLine = [sourceID, tMin, tMax, nObs, nEpochs, meanMag, medianQ, bestModel + 1, LR[bestModel],
+                            pVal[bestModel], nSigma[bestModel], pMD[bestModel], bestRMS, bestNEff]
+                dataLine.extend(list(bestSolution))
+                dataLine.extend(list(bestCov))
+
+                df_ppm = pd.concat([df_ppm, pd.DataFrame([dataLine], columns=columns)], ignore_index=True)
+
+            if (((i % nPrint) == 0) and (i > 0)):
+                elapsedTime = time.time() - startTimeAll
+                print("DONE PROCESSING {0:d} SOURCES! ELAPSED TIME: {1:s}".format(i + 1, convertTime(elapsedTime)))
+
+            '''
+            if (i > 1000):
+                break
+            '''
+
+            storeIn.close()
+
+            df_ppm = df_ppm.sort_values(by='xi0', ascending=True, ignore_index=True)
+
+            df_ppm.to_csv(properMotionFilename, index=False, mode='w')
+
+            elapsedTime = time.time() - startTimeAll
+
+            print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
+        else:
+            print("FILE EXISTS ALREADY!")
+
+        if reOrientFrame:
+            print("RE-ORIENTING CELESTIAL FRAME USING GAIA DR3 STARS...")
+            print("QUERYING THE CATALOGUE...")
+            Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
+            Gaia.ROW_LIMIT = -1
+
+            coord = SkyCoord(ra=c0.ra, dec=c0.dec, frame='icrs')
+
+            g = Gaia.query_object_async(coordinate=coord, width=WIDTH, height=HEIGHT)
+
+            gaia_selection = (g['ruwe'] >= MIN_RUWE) & (g['ruwe'] <= MAX_RUWE)
+
+            g = g[gaia_selection]
+
+            gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+
+            c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
+                              pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
+                              obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
+
+            print("GETTING THE SHIFT AND ROTATION MATRIX...")
+
+            xi0_gdr3, eta0_gdr3 = coords.getNormalCoordinates(c_gdr3, coords.getNormalTriad(c0))
+
+            xi0_gdr3_pix  = (xi0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
+            eta0_gdr3_pix = (eta0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
+
+            df_ppm = pd.read_csv(properMotionFilename)
+
+            gdr3Sources = df_ppm['sourceID'].str.contains('GDR3')
+
+            df_ppm['xi0_gdr3'] = np.nan
+            df_ppm['eta0_gdr3'] = np.nan
+
+            hasGDR3_indices_original = np.argwhere(gdr3Sources).flatten()
+
+            hasGDR3_indices = []
+            foundIndices = []
+            for index in hasGDR3_indices_original:
+                sourceID = df_ppm.iloc[index]['sourceID']
+                matchIndex = np.argwhere(gdr3_id == sourceID).flatten()[0]
+                bestModel = df_ppm.iloc[index]['bestModel']
+
+                if (not matchIndex in foundIndices):
+                    if (bestModel < 3):
+                        '''
+                        print(index, sourceID, matchIndex, gdr3_id[matchIndex], df_ppm.iloc[index]['xi0'],
+                              xi0_gdr3_pix[matchIndex], df_ppm.iloc[index]['eta0'], eta0_gdr3_pix[matchIndex])
+                        ''';
+
+                        df_ppm.at[index, 'xi0_gdr3']  = xi0_gdr3_pix[matchIndex]
+                        df_ppm.at[index, 'eta0_gdr3'] = eta0_gdr3_pix[matchIndex]
+
+                        hasGDR3_indices.append(index)
+                    foundIndices.append(matchIndex)
+
+            hasGDR3_indices = np.array(hasGDR3_indices)
+
+            df_new = pd.DataFrame(columns=['m', 'x', 'y', 'pm_x', 'pm_y'])
+
+            df_new['m'] = df_ppm['meanMag']
+
+            xi0, eta0 = df_ppm.iloc[hasGDR3_indices]['xi0'], df_ppm.iloc[hasGDR3_indices]['eta0']
+            xi0_gdr3, eta0_gdr3 = df_ppm.iloc[hasGDR3_indices]['xi0_gdr3'], df_ppm.iloc[hasGDR3_indices]['eta0_gdr3']
+
+            X, scaler       = sip.buildModel(xi0, eta0, 1)
+            XAll, scalerAll = sip.buildModel(df_ppm['xi0'], df_ppm['eta0'], 1)
+
+            reg = LinearRegression(fit_intercept=False)
+
+            for i in range(acsconstants.NAXIS):
+                if (i == 0):
+                    y = xi0_gdr3
+                elif (i == 1):
+                    y = eta0_gdr3
+
+                reg.fit(X, y)
+
+                print(reg.coef_)
+
+                new_coords = reg.predict(XAll)
+                new_pm = df_ppm['pm_xi'] * reg.coef_[1] + df_ppm['pm_eta'] * reg.coef_[2]
+
+                if ((refPix_x is not None) and (refPix_y is not None)):
+                    if (i == 0):
+                        df_new['x']    = refPix_x - new_coords
+                        df_new['pm_x'] = -new_pm
+                    elif (i == 1):
+                        df_new['y']    = refPix_y + new_coords
+                        df_new['pm_y'] = new_pm
+                else:
+                    if (i == 0):
+                        df_new['x']    = new_coords
+                        df_new['pm_x'] = new_pm
+                    elif (i == 1):
+                        df_new['y']    = new_coords
+                        df_new['pm_y'] = new_pm
+
+            propMotionFilenameGDR3 = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}_GDR3Corr.txt'.format(outDir, tRef)
+
+            df_new.to_csv(propMotionFilenameGDR3, sep=' ', header=False, index=True)
+
+            return properMotionFilename, propMotionFilenameGDR3
+        else:
+            return properMotionFilename
+
