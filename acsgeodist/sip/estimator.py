@@ -720,7 +720,7 @@ class SIPEstimator:
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                     textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
                     textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
-                                                                                     CDMatrix[1, 1], CDMatrix[0, 2])
+                                                                                     CDMatrix[1, 1], CDMatrix[1, 2])
                     for coeff in coeffs:
                         textResults += " {0:0.12e}".format(coeff)
                     textResults += "\n"
@@ -2214,7 +2214,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                             textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
                             textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
-                                                                                             CDMatrix[1, 1], CDMatrix[0, 2])
+                                                                                             CDMatrix[1, 1], CDMatrix[1, 2])
 
                             for coeffA, coeffB in zip(thisCoeffsA.flatten(), thisCoeffsB.flatten()):
                                 textResults += " {0:0.12e}".format(coeffA)
