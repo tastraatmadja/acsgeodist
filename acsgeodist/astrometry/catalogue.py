@@ -660,6 +660,7 @@ class SourceCollector:
         else:
             return properMotionFilename
 
+'''
 class CrossMatcher:
     def __init__(self, max_sep=None):
         self.max_sep = 1.0 * u.pix
@@ -668,3 +669,4 @@ class CrossMatcher:
             self.max_sep = max_sep
 
     def crossMatch(self, hst1passFilename, referenceCatalogue):
+''';
