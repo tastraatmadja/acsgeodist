@@ -660,13 +660,33 @@ class SourceCollector:
         else:
             return properMotionFilename
 
-'''
 class CrossMatcher:
-    def __init__(self, max_sep=None):
+    def __init__(self, referenceCatalog, referenceWCS, tRef0, max_sep=None):
+        self.refCat  = deepcopy(referenceCatalog)
+        self.wcsRef  = deepcopy(referenceWCS)
+        self.tRef0   = tRef0
         self.max_sep = 1.0 * u.pix
 
         if (max_sep is not None):
             self.max_sep = max_sep
 
-    def crossMatch(self, hst1passFilename, referenceCatalogue):
-''';
+
+
+    def crossMatch(self, hst1passFiles, imageFilenames):
+        for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
+            addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+
+            hduList = fits.open(imageFilename)
+
+            tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
+            t_acs = Time(tstring, scale='utc', format='fits')
+
+            dt = t_acs.decimalyear - self.tRef0
+
+            ## We use the observation time, in combination with the proper motions to move
+            ## the coordinates into the time
+            self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
+            self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+
+            hst1pass = ascii.read(hst1passFile)
+
