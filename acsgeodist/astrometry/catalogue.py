@@ -5,6 +5,7 @@ import time
 from astropy import coordinates
 from astropy import units as u
 from astropy.coordinates import SkyCoord
+from astropy.io import fits
 from astropy.time import Time
 from astroquery.gaia import Gaia
 from copy import deepcopy
@@ -638,11 +639,12 @@ class SourceCollector:
                 new_pm = df_ppm['pm_xi'] * reg.coef_[1] + df_ppm['pm_eta'] * reg.coef_[2]
 
                 if ((refPix_x is not None) and (refPix_y is not None)):
+                    ## Add 1 because in pixel space, coordinates starts from 1, NOT 0!
                     if (i == 0):
-                        df_new['x']    = refPix_x - new_coords
+                        df_new['x']    = refPix_x - new_coords + 1.0
                         df_new['pm_x'] = -new_pm
                     elif (i == 1):
-                        df_new['y']    = refPix_y + new_coords
+                        df_new['y']    = refPix_y + new_coords + 1.0
                         df_new['pm_y'] = new_pm
                 else:
                     if (i == 0):
@@ -688,5 +690,7 @@ class CrossMatcher:
             self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
             self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
 
-            hst1pass = ascii.read(hst1passFile)
+            df_hst1pass = pd.read_csv(hst1passFile)
 
+            ra = df_hst1pass['alpha'] * u.deg
+            de = df_hst1pass['delta'] * u.deg
