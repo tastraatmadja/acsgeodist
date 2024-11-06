@@ -681,9 +681,9 @@ class CrossMatcher:
             hduList = fits.open(imageFilename)
 
             tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
-            t_acs = Time(tstring, scale='utc', format='fits')
+            t_acs   = Time(tstring, scale='utc', format='fits')
 
-            dt = t_acs.decimalyear - self.tRef0
+            dt = t_acs.decimalyear - self.tRef0.utc.value
 
             ## We use the observation time, in combination with the proper motions to move
             ## the coordinates into the time
