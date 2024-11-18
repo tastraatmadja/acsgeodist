@@ -283,50 +283,51 @@ class SourceCollector:
                 print(".")
 
             if ((((i % nWrite) == 0) and (i > 0)) or (i == iterate[-1])):
-                print("Writing observation data and flushing out the dictionary...")
+                if (len(names) > 0):
+                    print("Writing observation data and flushing out the dictionary...")
 
-                startTimeFlush = time.time()
+                    startTimeFlush = time.time()
 
-                argsel = np.argwhere(np.array(nEpochs) >= self.min_n_epoch).flatten()
+                    argsel = np.argwhere(np.array(nEpochs) >= self.min_n_epoch).flatten()
 
-                print("NUMBER OF SOURCES SO FAR (SELECTED):", len(nEpochs), len(argsel))
+                    print("NUMBER OF SOURCES SO FAR (SELECTED):", len(nEpochs), len(argsel))
 
-                mode = 'w'
+                    mode = 'w'
 
-                if os.path.exists(obsDataFilenameAll):
-                    mode = 'a'
+                    if os.path.exists(obsDataFilenameAll):
+                        mode = 'a'
 
-                store = pd.HDFStore(obsDataFilenameAll, mode)
+                    store = pd.HDFStore(obsDataFilenameAll, mode)
 
-                for index in argsel:
-                    name = names[index]
+                    for index in argsel:
+                        name = names[index]
 
-                    store.append(name, obsData[index], index=False, append=True, format='table', complevel=None)
+                        store.append(name, obsData[index], index=False, append=True, format='table', complevel=None)
 
-                    ## obsData[index].to_hdf(obsDataFilenameAll, key=name, mode='a', append=True, complevel=None)
+                        ## obsData[index].to_hdf(obsDataFilenameAll, key=name, mode='a', append=True, complevel=None)
 
-                    ## Drop the whole rows once they're flushed to save memory, but keep the dataframe header so later
-                    ## we can load them with new rows
-                    obsData[index] = obsData[index][0:0]
+                        ## Drop the whole rows once they're flushed to save memory, but keep the dataframe header so later
+                        ## we can load them with new rows
+                        obsData[index] = obsData[index][0:0]
 
-                store.close()
+                    store.close()
 
-                ## Expand the list of files done after the collected data have been flushed
-                fileDone.extend(thisFileDone)
+                    ## Expand the list of files done after the collected data have been flushed
+                    fileDone.extend(thisFileDone)
 
-                thisFileDone.clear()
+                    thisFileDone.clear()
 
-                ## Writing the number of observations for individual sources
-                df_nObs = pd.DataFrame.from_dict({'source_id': names, 'nObs': nObsData, 'nEpochs': nEpochs})
-                df_nObs.to_csv(nObsDataFilename, index=False)
+                    ## Writing the number of observations for individual sources
+                    df_nObs = pd.DataFrame.from_dict({'source_id': names, 'nObs': nObsData, 'nEpochs': nEpochs})
+                    df_nObs.to_csv(nObsDataFilename, index=False)
 
-                df_fileDone = pd.DataFrame.from_dict({'rootname': fileDone})
-                df_fileDone.to_csv(fileDoneFilename, index=False)
+                    df_fileDone = pd.DataFrame.from_dict({'rootname': fileDone})
+                    df_fileDone.to_csv(fileDoneFilename, index=False)
 
-                gc.collect()
+                    gc.collect()
 
-                elapsedTime = time.time() - startTimeFlush
-                print("DONE FLUSHING! Elapsed time:", convertTime(elapsedTime))
+                    elapsedTime = time.time() - startTimeFlush
+                    print("DONE FLUSHING! Elapsed time:", convertTime(elapsedTime))
 
 
         elapsedTime = time.time() - startTimeAll
@@ -562,6 +563,9 @@ class SourceCollector:
             Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
             Gaia.ROW_LIMIT = -1
 
+            print(c0)
+            print(c0.ra, c0.dec)
+
             coord = SkyCoord(ra=c0.ra, dec=c0.dec, frame='icrs')
 
             g = Gaia.query_object_async(coordinate=coord, width=WIDTH, height=HEIGHT)
@@ -569,6 +573,8 @@ class SourceCollector:
             gaia_selection = (g['ruwe'] >= MIN_RUWE) & (g['ruwe'] <= MAX_RUWE)
 
             g = g[gaia_selection]
+
+            print("FOUND {0:d} GAIA SOURCES!".format(len(g)))
 
             gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
 
