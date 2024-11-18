@@ -1,4 +1,5 @@
 import gc
+import glob
 import os
 import time
 
@@ -666,31 +667,165 @@ class CrossMatcher:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, max_sep=None):
         self.refCat  = deepcopy(referenceCatalog)
         self.wcsRef  = deepcopy(referenceWCS)
-        self.tRef0   = tRef0
+        self.tRef0   = deepcopy(tRef0)
         self.max_sep = 1.0 * u.pix
+
+        ## Now we take the normal triad pqr_0 of the reference coordinate
+        self.pqr0 = coords.getNormalTriad(SkyCoord(ra=self.wcsRef.wcs.crval[0] * u.deg,
+                                                   dec=self.wcsRef.wcs.crval[1] * u.deg, frame='icrs'))
 
         if (max_sep is not None):
             self.max_sep = max_sep
 
-
-
-    def crossMatch(self, hst1passFiles, imageFilenames):
+    def crossMatch(self, hst1passFiles, imageFilenames, outDir='./'):
         for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
-            addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+            print(i, os.path.basename(hst1passFile))
 
             hduList = fits.open(imageFilename)
 
-            tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
-            t_acs   = Time(tstring, scale='utc', format='fits')
+            baseFilename = hduList[0].header['FILENAME'].replace('.fits', '')
 
-            dt = t_acs.decimalyear - self.tRef0.utc.value
+            outFilename = '{0:s}/{1:s}_hst1pass_stand.csv'.format(outDir, baseFilename)
 
-            ## We use the observation time, in combination with the proper motions to move
-            ## the coordinates into the time
-            self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
-            self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+            if (not os.path.exists(outFilename)):
+                tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
+                t_acs   = Time(tstring, scale='utc', format='fits')
 
-            df_hst1pass = pd.read_csv(hst1passFile)
+                dt = t_acs.decimalyear - self.tRef0.utc.value
 
-            ra = df_hst1pass['alpha'] * u.deg
-            de = df_hst1pass['delta'] * u.deg
+                ## We use the observation time, in combination with the proper motions to move
+                ## the coordinates into the time
+                self.refCat['xt'] = self.refCat['x'].values + self.refCat['pm_x'].values * dt
+                self.refCat['yt'] = self.refCat['y'].values + self.refCat['pm_y'].values * dt
+
+                self.refCat = coords.getNormalCoordinatesInTable(self.refCat, 'xt', 'yt', self.wcsRef, self.pqr0)
+
+                c_refCat = SkyCoord(ra=self.refCat['alpha'].values * u.deg, dec=self.refCat['delta'].values * u.deg,
+                                    frame='icrs')
+
+                df_hst1pass = pd.read_csv(hst1passFile)
+
+                alpha = df_hst1pass['alpha'].values
+                delta = df_hst1pass['delta'].values
+
+                selection = ~np.isnan(alpha) & ~np.isnan(delta)
+
+                c_image = SkyCoord(ra=alpha[selection] * u.deg, dec=delta[selection] * u.deg, frame='icrs')
+
+                idx_init, sep_init, _ = c_image.match_to_catalog_sky(c_refCat)
+
+                idx = np.full(len(df_hst1pass), -1, dtype=int)
+                sep = np.full(len(df_hst1pass), np.inf) * sep_init.unit
+
+                idx[selection] = deepcopy(idx_init)
+                sep[selection] = deepcopy(sep_init)
+
+                sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
+
+                hasRefCat = sep_pix < self.max_sep
+
+                ## Find doubly-identified sources and remove them. We use numpy unique
+                ## to identify refCat sources cross-matched within MAX_SEP to multiple sources
+                ## in the ACS image
+                doubleIndices, counts = np.unique(idx[hasRefCat], return_counts=True)
+
+                ## We now create mask for ACS sources that are cross-matched to the same
+                ## RefCat sources.
+                doubleSources = np.where(np.isin(idx, doubleIndices[counts > 1]))
+
+                ## We remove sources cross-matched to the same RefCat sources.
+                hasRefCat[doubleSources] = False
+
+                print("MATCH: {0:d} out of {1:d} selected sources".format(hasRefCat[hasRefCat].size, hasRefCat.size))
+
+                ## Replace the old values with default values
+                df_hst1pass['hasRefCat']   = False
+                df_hst1pass['refCatID']    = -1
+                df_hst1pass['refCatIndex'] = -1
+
+                ## Append new columns to the hst1pass results
+                df_hst1pass['hasRefCat']                  = deepcopy(hasRefCat)
+                df_hst1pass.loc[hasRefCat, 'refCatID']    = self.refCat.iloc[idx[hasRefCat]]['id'].values
+                df_hst1pass.loc[hasRefCat, 'refCatIndex'] = deepcopy(idx[hasRefCat])
+
+                df_hst1pass.drop(columns=['nAppearances', 'refCatMag', 'dx', 'dy', 'retained', 'weights', 'xi', 'eta',
+                                          'xiRef', 'etaRef', 'resXi', 'resEta', 'alpha', 'delta', 'sourceID']).to_csv(
+                    outFilename, index=False)
+
+                print("CSV table written to", outFilename)
+
+        ## We now count the number of appearances for each reference star.
+        hst1passFilesCSV = sorted(glob.glob("{0:s}/*_stand.csv".format(outDir)))
+
+        print("Found {0:d} crossmatched HST1PASS results files!".format(len(hst1passFilesCSV)))
+
+        ## Initialize table
+        nAppearances = np.zeros(len(self.refCat), dtype=int)
+
+        for i, hst1passFilename in enumerate(hst1passFilesCSV):
+            print(i, hst1passFilename)
+
+            df_hst1pass = pd.read_csv(hst1passFilename)
+
+            nSources = len(df_hst1pass)
+
+            print("Read {0:d} detected sources".format(nSources))
+
+            selection = df_hst1pass['refCatIndex'] >= 0
+
+            refCatIndices = df_hst1pass[selection]['refCatIndex'].values
+
+            nRefStars = len(refCatIndices)
+
+            print("Found {0:d} detected sources with reference star counterpart".format(nRefStars))
+
+            nAppearances[refCatIndices] += 1
+
+            gc.set_threshold(2, 1, 1)
+            print('Thresholds:', gc.get_threshold())
+            print('Counts:', gc.get_count())
+
+            del df_hst1pass
+            gc.collect()
+            print('Counts:', gc.get_count())
+
+        print("ALL DONE!")
+
+        ## Now, for each hst1pass file, we provide an addendum column giving the fractional appearances
+        ## of each reference star and its instrumental magnitude (according to the reference catalogue)
+        ## We now count the number of appearances for each reference star.
+        addendumFilenames = []
+        for i, hst1passFilename in enumerate(hst1passFilesCSV):
+            print(i, hst1passFilename)
+
+            baseName = os.path.basename(hst1passFilename).replace('.csv', '')
+
+            addendumFilename = '{0:s}/{1:s}_addendum.csv'.format(outDir, baseName)
+
+            if (not os.path.exists(addendumFilename)):
+                df_hst1pass = pd.read_csv(hst1passFilename)
+
+                nSources = len(df_hst1pass)
+
+                print("Read {0:d} detected sources".format(nSources))
+
+                selection     = df_hst1pass['refCatIndex'] >= 0
+                refCatIndices = df_hst1pass[selection]['refCatIndex'].values
+                nRefStars     = refCatIndices.size
+
+                print("Found {0:d} detected sources with reference star counterpart".format(nRefStars))
+
+                df_hst1pass['nAppearances'] = np.nan
+                df_hst1pass['refCatMag']    = np.nan
+
+                df_hst1pass.loc[selection, 'nAppearances'] = nAppearances[refCatIndices]
+                df_hst1pass.loc[selection, 'refCatMag']    = self.refCat.iloc[refCatIndices]['m'].values
+
+                df_hst1pass[['nAppearances', 'refCatMag']].to_csv(addendumFilename, index=False)
+
+                print("Addendum written to {0:s}".format(addendumFilename))
+
+            addendumFilenames.append(addendumFilename)
+
+        print("ALL DONE!")
+        return hst1passFilesCSV, addendumFilenames

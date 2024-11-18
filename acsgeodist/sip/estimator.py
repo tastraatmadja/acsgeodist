@@ -17,7 +17,7 @@ from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
 import numpy as np
 import os
 from photutils.aperture import CircularAperture
-from scipy import linalg, signal, sparse
+from scipy import interpolate, linalg, sparse
 import seaborn as sns
 from sklearn import linear_model
 import time
@@ -71,7 +71,7 @@ class SIPEstimator:
                  min_n_refstar=100, make_lithographic_and_filter_mask_corrections=True, cross_match=True):
         self.refCat        = deepcopy(referenceCatalog)
         self.wcsRef        = deepcopy(referenceWCS)
-        self.tRef0         = tRef0
+        self.tRef0         = deepcopy(tRef0)
         self.qMax          = qMax
         self.min_n_app     = min_n_app
         self.max_pix_tol   = max_pix_tol
@@ -131,7 +131,7 @@ class SIPEstimator:
         posTarg1 = float(hduList[0].header['POSTARG1'])
         posTarg2 = float(hduList[0].header['POSTARG2'])
 
-        dt = t_acs.decimalyear - self.tRef0
+        dt = t_acs.decimalyear - self.tRef0.utc.value
 
         ## We use the observation time, in combination with the proper motions to move
         ## the coordinates into the time
@@ -1164,7 +1164,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     pa_v3 = float(hduList[0].header['PA_V3'])
 
-                    dt = t_acs.decimalyear - self.tRef0
+                    dt = t_acs.decimalyear - self.tRef0.utc.value
 
                     ## We use the observation time, in combination with the proper motions to move
                     ## the coordinates into the time
@@ -1397,6 +1397,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         tPlot = np.linspace(self.tMin - self.kOrder * self.dtKnot, self.tMax + self.kOrder * self.dtKnot,
                             nPointsGrid, endpoint=True)
 
+        nSplines = self.tKnot.size + self.kOrder - 1
+        tKnotSpl = np.linspace(self.tKnot[0] - self.kOrder * self.dtKnot, self.tKnot[-1] + self.kOrder * self.dtKnot,
+                               self.nKnots + 2 * self.kOrder, endpoint=True)
+
         xMin = min(xMin, self.tMin - self.kOrder * self.dtKnot - 0.25 * self.dtKnot)
         xMax = max(xMax, self.tMax + self.kOrder * self.dtKnot + 0.25 * self.dtKnot)
 
@@ -1413,9 +1417,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         ax1 = fig1.add_subplot(111)
 
         ## for knot in range(-kOrder, tT.size - 2 * kOrder - 1):
-        for ii in range(self.tKnot.size + self.kOrder - 1):
-            knotID  = ii - self.kOrder
-            BSpline = signal.bspline((tPlot - self.tMin) / self.dtKnot - 0.5 * (self.kOrder + 1) - knotID, self.kOrder)
+        for ii in range(nSplines):
+            b = interpolate.BSpline.basis_element(tKnotSpl[ii:ii + self.kOrder + 2], extrapolate=False)
+
+            BSpline = b(tPlot)
 
             nonZero = BSpline > 0
 
@@ -1935,7 +1940,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     if (self.tMin <= t_acs.decimalyear <= self.tMax):
                         print(i, hst1passFile)
 
-                        dt = t_acs.decimalyear - self.tRef0
+                        dt = t_acs.decimalyear - self.tRef0.utc.value
 
                         tExp = float(hduList[0].header['EXPTIME'])
 

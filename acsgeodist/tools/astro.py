@@ -6,6 +6,8 @@ from calcos import orbit
 import healpy as hp
 import numpy as np
 
+from acsgeodist.tools import coords
+
 ## Astronomical unit (m) IAU 2012
 DAU = 149597870.7e3 * u.m
 

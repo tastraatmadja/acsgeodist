@@ -48,6 +48,27 @@ def getNormalCoordinates(c, pqr0):
 
     return xi, eta
 
+def getNormalCoordinatesInTable(tab, x, y, wcs, pqr0, selection=None):
+    if selection is None:
+        selection = np.full(len(tab), True, dtype=bool)
+
+    tab['alpha'] = np.nan
+    tab['delta'] = np.nan
+    tab['xi'] = np.nan
+    tab['eta'] = np.nan
+
+    tab.loc[selection, 'alpha'], tab.loc[selection, 'delta'] = wcs.wcs_pix2world(tab.loc[selection, x].values,
+                                                                                 tab.loc[selection, y].values, 1)
+
+    xi, eta = getNormalCoordinates(
+        SkyCoord(ra=tab.loc[selection, 'alpha'].values * u.deg, dec=tab.loc[selection, 'delta'].values * u.deg,
+                 frame='icrs'), pqr0)
+
+    tab.loc[selection, 'xi']  = xi.to_value(u.arcsec)
+    tab.loc[selection, 'eta'] = eta.to_value(u.arcsec)
+
+    return tab
+
 '''
 From normal coordinates (xi, eta), calculate its observed
 celestial coordinates r = {alpha, delta}. The celestial
