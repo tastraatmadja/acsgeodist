@@ -1065,7 +1065,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.min_t_exp     = min_t_exp
         self.max_pos_targs = max_pos_targs
 
-    def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', **kwargs):
+    def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', makePlots=True,
+                                                 **kwargs):
         nOkay    = 0
         nDataAll = np.zeros(2, dtype=int)
 
@@ -1381,84 +1382,85 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         elapsedTime = time.time() - startTime
         print("READING DATA AND BUILDING MODEL DONE! Elapsed time:", convertTime(elapsedTime))
 
-        xSize1 = 12
-        ySize1 = 0.25 * xSize1
+        if makePlots:
+            xSize1 = 12
+            ySize1 = 0.25 * xSize1
 
-        xMin, xMax = np.inf, -np.inf
-        yMin, yMax = 0.0, 1.1
+            xMin, xMax = np.inf, -np.inf
+            yMin, yMax = 0.0, 1.1
 
-        dY, dMY = 0.5, 0.1
+            dY, dMY = 0.5, 0.1
 
-        xLabel2 = r'Time [yr]'
+            xLabel2 = r'Time [yr]'
 
-        ## This is the grid of plotting points
-        nPointsGrid = 1001
+            ## This is the grid of plotting points
+            nPointsGrid = 1001
 
-        tPlot = np.linspace(self.tMin - self.kOrder * self.dtKnot, self.tMax + self.kOrder * self.dtKnot,
-                            nPointsGrid, endpoint=True)
+            tPlot = np.linspace(self.tMin - self.kOrder * self.dtKnot, self.tMax + self.kOrder * self.dtKnot,
+                                nPointsGrid, endpoint=True)
 
-        nSplines = self.tKnot.size + self.kOrder - 1
-        tKnotSpl = np.linspace(self.tKnot[0] - self.kOrder * self.dtKnot, self.tKnot[-1] + self.kOrder * self.dtKnot,
-                               self.nKnots + 2 * self.kOrder, endpoint=True)
+            nSplines = self.tKnot.size + self.kOrder - 1
+            tKnotSpl = np.linspace(self.tKnot[0] - self.kOrder * self.dtKnot, self.tKnot[-1] + self.kOrder * self.dtKnot,
+                                   self.nKnots + 2 * self.kOrder, endpoint=True)
 
-        xMin = min(xMin, self.tMin - self.kOrder * self.dtKnot - 0.25 * self.dtKnot)
-        xMax = max(xMax, self.tMax + self.kOrder * self.dtKnot + 0.25 * self.dtKnot)
+            xMin = min(xMin, self.tMin - self.kOrder * self.dtKnot - 0.25 * self.dtKnot)
+            xMax = max(xMax, self.tMax + self.kOrder * self.dtKnot + 0.25 * self.dtKnot)
 
-        nonZeroSplines = []
-        BSplines = []
+            nonZeroSplines = []
+            BSplines = []
 
-        prop_cycle = plt.rcParams['axes.prop_cycle']
-        colors = prop_cycle.by_key()['color']
+            prop_cycle = plt.rcParams['axes.prop_cycle']
+            colors = prop_cycle.by_key()['color']
 
-        knotColors = ['#b2df8a', '#a6cee3']
+            knotColors = ['#b2df8a', '#a6cee3']
 
-        fig1 = plt.figure(figsize=(xSize1, ySize1))
+            fig1 = plt.figure(figsize=(xSize1, ySize1))
 
-        ax1 = fig1.add_subplot(111)
+            ax1 = fig1.add_subplot(111)
 
-        ## for knot in range(-kOrder, tT.size - 2 * kOrder - 1):
-        for ii in range(nSplines):
-            b = interpolate.BSpline.basis_element(tKnotSpl[ii:ii + self.kOrder + 2], extrapolate=False)
+            ## for knot in range(-kOrder, tT.size - 2 * kOrder - 1):
+            for ii in range(nSplines):
+                b = interpolate.BSpline.basis_element(tKnotSpl[ii:ii + self.kOrder + 2], extrapolate=False)
 
-            BSpline = b(tPlot)
+                BSpline = b(tPlot)
 
-            nonZero = BSpline > 0
+                nonZero = BSpline > 0
 
-            color = colors[ii % len(colors)]
+                color = colors[ii % len(colors)]
 
-            ax1.plot(tPlot[nonZero], BSpline[nonZero], '-', color=color)
+                ax1.plot(tPlot[nonZero], BSpline[nonZero], '-', color=color)
 
-            nonZeroSplines.append(nonZero)
-            BSplines.append(BSpline)
+                nonZeroSplines.append(nonZero)
+                BSplines.append(BSpline)
 
-        for ii in range(1, XtAll.shape[1]):
-            nonZero = XtAll[:, ii] > 0
+            for ii in range(1, XtAll.shape[1]):
+                nonZero = XtAll[:, ii] > 0
 
-            color = colors[(ii - 1) % len(colors)]
+                color = colors[(ii - 1) % len(colors)]
 
-            ax1.plot(tObs[nonZero], XtAll[nonZero, ii], '.', color=color, rasterized=True)
+                ax1.plot(tObs[nonZero], XtAll[nonZero, ii], '.', color=color, rasterized=True)
 
-        for ii in range(self.tKnot.size):
-            ax1.axvline(self.tKnot[ii], linewidth=1, linestyle='-', color=knotColors[0])
+            for ii in range(self.tKnot.size):
+                ax1.axvline(self.tKnot[ii], linewidth=1, linestyle='-', color=knotColors[0])
 
-        ax1.set_xlim(xMin, xMax)
-        ax1.xaxis.set_major_locator(AutoLocator())
-        ax1.xaxis.set_minor_locator(AutoMinorLocator())
+            ax1.set_xlim(xMin, xMax)
+            ax1.xaxis.set_major_locator(AutoLocator())
+            ax1.xaxis.set_minor_locator(AutoMinorLocator())
 
-        ax1.set_ylim(yMin, yMax)
-        ax1.yaxis.set_major_locator(MultipleLocator(dY))
-        ax1.yaxis.set_minor_locator(MultipleLocator(dMY))
+            ax1.set_ylim(yMin, yMax)
+            ax1.yaxis.set_major_locator(MultipleLocator(dY))
+            ax1.yaxis.set_minor_locator(MultipleLocator(dMY))
 
-        ax1.set_xlabel(xLabel2);
-        ax1.set_ylabel(r'$B_{i,k}(t)$');
+            ax1.set_xlabel(xLabel2);
+            ax1.set_ylabel(r'$B_{i,k}(t)$');
 
-        plotFilename1 = "{0:s}/plot_BSplines_vs_time_kOrder{1:d}.pdf".format(outDir, self.kOrder)
+            plotFilename1 = "{0:s}/plot_BSplines_vs_time_kOrder{1:d}.pdf".format(outDir, self.kOrder)
 
-        fig1.savefig(plotFilename1, bbox_inches='tight')
+            fig1.savefig(plotFilename1, bbox_inches='tight')
 
-        print("B-Spline plot saved to {0:s}".format(plotFilename1))
+            print("B-Spline plot saved to {0:s}".format(plotFilename1))
 
-        plt.close(fig=fig1)
+            plt.close(fig=fig1)
 
         self.nImages = nOkay
 
@@ -1583,12 +1585,13 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 plotFilename1 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualDistribution.pdf".format(
                     outDir, chip, self.pOrder, self.kOrder, self.nKnots)
 
-                pp1 = PdfPages(plotFilename1)
-
                 plotFilename2 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualsXY.pdf".format(
                     outDir, chip, self.pOrder, self.kOrder, self.nKnots)
 
-                pp2 = PdfPages(plotFilename2)
+                if makePlots:
+                    pp1 = PdfPages(plotFilename1)
+
+                    pp2 = PdfPages(plotFilename2)
 
                 for iteration in range(N_ITER_OUTER):
                     print("OUTER_ITERATION {0:d}, AVERAGE SHIFTS AND ROLL:".format(iteration + 1), np.nanmean(dxs),
@@ -1694,147 +1697,144 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                               "Elapsed time: {0}".format(convertTime(elapsedTime)))
 
                         if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
-                            xSize = 8
-                            ySize = xSize
+                            if makePlots:
+                                xSize = 8
+                                ySize = xSize
 
-                            fig = plt.figure(figsize=(xSize, ySize), rasterized=True)
+                                fig = plt.figure(figsize=(xSize, ySize), rasterized=True)
 
-                            ax = fig.add_subplot(111)
+                                ax = fig.add_subplot(111)
 
-                            ax.plot(residuals[rejected][:, 0], residuals[rejected][:, 1], '.', markersize=markerSize,
-                                    label=r'$w = 0$', color=discardedColor, rasterized=True)
-                            ax.plot(residuals[nonFull][:, 0], residuals[nonFull][:, 1], '.', markersize=markerSize,
-                                    label=r'$0 < w < 1$', color=nonFullColor, rasterized=True)
-                            ax.plot(residuals[retained0][:, 0], residuals[retained0][:, 1], '.', markersize=markerSize,
-                                    label=r'$w = 1$', color=retainedColor, rasterized=True)
+                                ax.plot(residuals[rejected][:, 0], residuals[rejected][:, 1], '.', markersize=markerSize,
+                                        label=r'$w = 0$', color=discardedColor, rasterized=True)
+                                ax.plot(residuals[nonFull][:, 0], residuals[nonFull][:, 1], '.', markersize=markerSize,
+                                        label=r'$0 < w < 1$', color=nonFullColor, rasterized=True)
+                                ax.plot(residuals[retained0][:, 0], residuals[retained0][:, 1], '.', markersize=markerSize,
+                                        label=r'$w = 1$', color=retainedColor, rasterized=True)
 
-                            ax.axhline()
-                            ax.axvline()
+                                ax.axhline()
+                                ax.axvline()
 
-                            xMin1, xMax1 = ax.get_xlim()
-                            yMin1, yMax1 = ax.get_ylim()
+                                xMin1, xMax1 = ax.get_xlim()
+                                yMin1, yMax1 = ax.get_ylim()
 
-                            maxRange = np.nanmax(np.abs(np.array([xMin1, xMax1, yMin1, yMax1])))
+                                maxRange = np.nanmax(np.abs(np.array([xMin1, xMax1, yMin1, yMax1])))
 
-                            ax.set_xlim(-maxRange, +maxRange)
-                            ax.set_ylim(-maxRange, +maxRange)
+                                ax.set_xlim(-maxRange, +maxRange)
+                                ax.set_ylim(-maxRange, +maxRange)
 
-                            ax.set_aspect('equal')
+                                ax.set_aspect('equal')
 
-                            ax.set_xlabel(r'$\Delta X$ [pix]')
-                            ax.set_ylabel(r'$\Delta Y$ [pix]')
+                                ax.set_xlabel(r'$\Delta X$ [pix]')
+                                ax.set_ylabel(r'$\Delta Y$ [pix]')
 
-                            ax.xaxis.set_major_locator(AutoLocator())
-                            ax.xaxis.set_minor_locator(AutoMinorLocator())
+                                ax.xaxis.set_major_locator(AutoLocator())
+                                ax.xaxis.set_minor_locator(AutoMinorLocator())
 
-                            ax.yaxis.set_major_locator(AutoLocator())
-                            ax.yaxis.set_minor_locator(AutoMinorLocator())
+                                ax.yaxis.set_major_locator(AutoLocator())
+                                ax.yaxis.set_minor_locator(AutoMinorLocator())
 
-                            ax.legend(frameon=True)
+                                ax.legend(frameon=True)
 
-                            ax.set_title(
-                                '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
-                                                                                                                  self.pOrder,
-                                                                                                                  self.kOrder,
-                                                                                                                  self.nKnots,
-                                                                                                                  iteration + 1,
-                                                                                                                  iteration2 + 1))
+                                ax.set_title(
+                                    '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(
+                                        chipTitle, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1))
 
-                            pp1.savefig(fig)
+                                pp1.savefig(fig)
 
-                            plt.close(fig=fig)
+                                plt.close(fig=fig)
 
-                            fig2, axes2 = plt.subplots(figsize=(xSize2, ySize2), nrows=nRows2, ncols=nCols2,
-                                                       rasterized=True)
+                                fig2, axes2 = plt.subplots(figsize=(xSize2, ySize2), nrows=nRows2, ncols=nCols2,
+                                                           rasterized=True)
 
-                            xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
-                            yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
+                                xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
+                                yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
 
-                            XY0 = np.array([X0, Y0[0]])
+                                XY0 = np.array([X0, Y0[0]])
 
-                            xMin = np.array([0, 0])
-                            xMax = np.array([4096, 2048])
+                                xMin = np.array([0, 0])
+                                xMax = np.array([4096, 2048])
 
-                            yMin = +np.inf
-                            yMax = -np.inf
+                                yMin = +np.inf
+                                yMax = -np.inf
 
-                            for axis1 in range(NAXIS):
-                                for axis2 in range(NAXIS):
-                                    coordinatesDiscarded = xyRaw[rejected][:, axis2]
-                                    residualsDiscarded = residuals[rejected][:, axis1]
+                                for axis1 in range(NAXIS):
+                                    for axis2 in range(NAXIS):
+                                        coordinatesDiscarded = xyRaw[rejected][:, axis2]
+                                        residualsDiscarded = residuals[rejected][:, axis1]
 
-                                    coordinatesNonFull = xyRaw[nonFull][:, axis2]
-                                    residualsNonFull = residuals[nonFull][:, axis1]
+                                        coordinatesNonFull = xyRaw[nonFull][:, axis2]
+                                        residualsNonFull = residuals[nonFull][:, axis1]
 
-                                    coordinatesRetained = xyRaw[retained0][:, axis2]
-                                    residualsRetained = residuals[retained0][:, axis1]
+                                        coordinatesRetained = xyRaw[retained0][:, axis2]
+                                        residualsRetained = residuals[retained0][:, axis1]
 
-                                    mean = np.nanmean(residuals[retained0][:, axis1])
-                                    stdDev = np.nanstd(residuals[retained0][:, axis1])
+                                        mean = np.nanmean(residuals[retained0][:, axis1])
+                                        stdDev = np.nanstd(residuals[retained0][:, axis1])
 
-                                    axes2[axis1, axis2].plot(coordinatesDiscarded, residualsDiscarded, '.',
-                                                             markersize=markerSize, zorder=1, label=r'$w = 0$',
-                                                             color=discardedColor, rasterized=True)
-                                    axes2[axis1, axis2].plot(coordinatesNonFull, residualsNonFull, '.',
-                                                             markersize=markerSize, zorder=1, label=r'$0 < w < 1$',
-                                                             color=nonFullColor, rasterized=True)
-                                    axes2[axis1, axis2].plot(coordinatesRetained, residualsRetained, '.',
-                                                             markersize=markerSize, zorder=1, label=r'$w = 1$',
-                                                             color=retainedColor, rasterized=True)
+                                        axes2[axis1, axis2].plot(coordinatesDiscarded, residualsDiscarded, '.',
+                                                                 markersize=markerSize, zorder=1, label=r'$w = 0$',
+                                                                 color=discardedColor, rasterized=True)
+                                        axes2[axis1, axis2].plot(coordinatesNonFull, residualsNonFull, '.',
+                                                                 markersize=markerSize, zorder=1, label=r'$0 < w < 1$',
+                                                                 color=nonFullColor, rasterized=True)
+                                        axes2[axis1, axis2].plot(coordinatesRetained, residualsRetained, '.',
+                                                                 markersize=markerSize, zorder=1, label=r'$w = 1$',
+                                                                 color=retainedColor, rasterized=True)
 
-                                    axes2[axis1, axis2].axhline(0,
-                                                                color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
-                                                                linestyle='--', zorder=2)
+                                        axes2[axis1, axis2].axhline(0,
+                                                                    color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+                                                                    linestyle='--', zorder=2)
 
-                                    axes2[axis1, axis2].axhline(mean, color='r', linestyle='-', zorder=3)
+                                        axes2[axis1, axis2].axhline(mean, color='r', linestyle='-', zorder=3)
 
-                                    ## xMin, xMax = axes2[axis1,axis2].get_xlim()
+                                        ## xMin, xMax = axes2[axis1,axis2].get_xlim()
 
-                                    resMin = mean - stdDev
-                                    resMax = mean + stdDev
+                                        resMin = mean - stdDev
+                                        resMax = mean + stdDev
 
-                                    yMin = np.nanmin(np.array([yMin, mean - 5.0 * stdDev, np.nanmin(residuals)]))
-                                    yMax = np.nanmax(np.array([yMax, mean + 5.0 * stdDev, np.nanmax(residuals)]))
+                                        yMin = np.nanmin(np.array([yMin, mean - 5.0 * stdDev, np.nanmin(residuals)]))
+                                        yMax = np.nanmax(np.array([yMax, mean + 5.0 * stdDev, np.nanmax(residuals)]))
 
-                                    axes2[axis1, axis2].fill_between([xMin[axis2], xMax[axis2]], [resMin, resMin],
-                                                                     y2=[resMax, resMax], alpha=0.2, zorder=3)
+                                        axes2[axis1, axis2].fill_between([xMin[axis2], xMax[axis2]], [resMin, resMin],
+                                                                         y2=[resMax, resMax], alpha=0.2, zorder=3)
 
-                                    axes2[axis1, axis2].set_xlabel(xLabels[axis2])
-                                    axes2[axis1, axis2].set_ylabel(yLabels[axis1])
+                                        axes2[axis1, axis2].set_xlabel(xLabels[axis2])
+                                        axes2[axis1, axis2].set_ylabel(yLabels[axis1])
 
-                                    axes2[axis1, axis2].xaxis.set_major_locator(MultipleLocator(dX))
-                                    axes2[axis1, axis2].xaxis.set_minor_locator(MultipleLocator(dMX))
+                                        axes2[axis1, axis2].xaxis.set_major_locator(MultipleLocator(dX))
+                                        axes2[axis1, axis2].xaxis.set_minor_locator(MultipleLocator(dMX))
 
-                                    axes2[axis1, axis2].yaxis.set_major_locator(AutoLocator())
-                                    axes2[axis1, axis2].yaxis.set_minor_locator(AutoMinorLocator())
+                                        axes2[axis1, axis2].yaxis.set_major_locator(AutoLocator())
+                                        axes2[axis1, axis2].yaxis.set_minor_locator(AutoMinorLocator())
 
-                                    axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
+                                        axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
 
-                            ## print("Y_MIN:", yMin, "Y_MAX:", yMax)
+                                ## print("Y_MIN:", yMin, "Y_MAX:", yMax)
 
-                            yMaxMin = np.nanmax(np.abs(np.array([yMin, yMax])))
+                                yMaxMin = np.nanmax(np.abs(np.array([yMin, yMax])))
 
-                            for axis1 in range(NAXIS):
-                                for axis2 in range(NAXIS):
-                                    axes2[axis1, axis2].set_ylim([-yMaxMin, +yMaxMin])
+                                for axis1 in range(NAXIS):
+                                    for axis2 in range(NAXIS):
+                                        axes2[axis1, axis2].set_ylim([-yMaxMin, +yMaxMin])
 
-                            ## axes2[0,0].legend()
+                                ## axes2[0,0].legend()
 
-                            axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
+                                axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
 
-                            axCommons.set_title(
-                                '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
-                                                                                                                  self.pOrder,
-                                                                                                                  self.kOrder,
-                                                                                                                  self.nKnots,
-                                                                                                                  iteration + 1,
-                                                                                                                  iteration2 + 1))
+                                axCommons.set_title(
+                                    '{0:s}, $p$ = {1:d}, $k$ = {2:d}, $n_k$ = {3:d}, iter1 {4:d}, iter2 {5:d}'.format(chipTitle,
+                                                                                                                      self.pOrder,
+                                                                                                                      self.kOrder,
+                                                                                                                      self.nKnots,
+                                                                                                                      iteration + 1,
+                                                                                                                      iteration2 + 1))
 
-                            plt.subplots_adjust(wspace=0.25, hspace=0.3)
+                                plt.subplots_adjust(wspace=0.25, hspace=0.3)
 
-                            pp2.savefig(fig2, bbox_inches='tight', dpi=300)
+                                pp2.savefig(fig2, bbox_inches='tight', dpi=300)
 
-                            plt.close(fig=fig2)
+                                plt.close(fig=fig2)
 
                         gc.set_threshold(2, 1, 1)
 
@@ -1886,13 +1886,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             tObs      = tObs[~rejected]
                             rootnames = rootnames[~rejected]
 
-                pp1.close()
+                if makePlots:
+                    pp1.close()
 
-                print("Residual 2d distribution plots saved to {0:s}".format(plotFilename1))
+                    print("Residual 2d distribution plots saved to {0:s}".format(plotFilename1))
 
-                pp2.close()
+                    pp2.close()
 
-                print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
+                    print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
 
                 np.save(finalCoeffsAFilename, coeffsA)
                 np.save(finalCoeffsBFilename, coeffsB)
@@ -2284,126 +2285,127 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         print("Final table written to", outTableFilename)
 
                         ## Plot the coordinates and their residuals on a common reference frame
-                        xSize3 = 12
-                        ySize3 = 1.0075 * xSize3
+                        if makePlots:
+                            xSize3 = 12
+                            ySize3 = 1.0075 * xSize3
 
-                        xMin3, xMax3 = -5500, +5500
-                        yMin3, yMax3 = xMin3, xMax3
+                            xMin3, xMax3 = -5500, +5500
+                            yMin3, yMax3 = xMin3, xMax3
 
-                        dX3, dMX3 = 2000, 500
-                        dY3, dMY3 = dX3, dMX3
+                            dX3, dMX3 = 2000, 500
+                            dY3, dMY3 = dX3, dMX3
 
-                        resMin = -0.29
-                        resMax = +0.29
-                        dRes = 0.2
-                        dMRes = 0.05
+                            resMin = -0.29
+                            resMax = +0.29
+                            dRes = 0.2
+                            dMRes = 0.05
 
-                        markerSize3 = 8
+                            markerSize3 = 8
 
-                        fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(xSize3, ySize3), sharex='col', sharey='row',
-                                                 width_ratios=[1.0, 0.25, 0.25], height_ratios=[0.25, 0.25, 1.0])
+                            fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(xSize3, ySize3), sharex='col', sharey='row',
+                                                     width_ratios=[1.0, 0.25, 0.25], height_ratios=[0.25, 0.25, 1.0])
 
-                        ax3[0, 0].set_title(
-                            hduList[0].header['ROOTNAME'] + ' --- ' + hduList[0].header['DATE-OBS'] + ' UT' +
-                            hduList[0].header['TIME-OBS'])
+                            ax3[0, 0].set_title(
+                                hduList[0].header['ROOTNAME'] + ' --- ' + hduList[0].header['DATE-OBS'] + ' UT' +
+                                hduList[0].header['TIME-OBS'])
 
-                        ax3[0, 1].set_visible(False)
-                        ax3[0, 2].set_visible(False)
-                        ax3[1, 2].set_visible(False)
+                            ax3[0, 1].set_visible(False)
+                            ax3[0, 2].set_visible(False)
+                            ax3[1, 2].set_visible(False)
 
-                        print("FINAL RESIDUALS (COMBINED):")
-                        df_resids = hst1pass.to_pandas()
+                            print("FINAL RESIDUALS (COMBINED):")
+                            df_resids = hst1pass.to_pandas()
 
-                        selection = (df_resids['refCatIndex'] >= 0) & df_resids['retained']
+                            selection = (df_resids['refCatIndex'] >= 0) & df_resids['retained']
 
-                        print(df_resids.loc[selection, ['resXi', 'resEta']].describe())
+                            print(df_resids.loc[selection, ['resXi', 'resEta']].describe())
 
-                        sns.scatterplot(data=df_resids[selection], x='resXi', y='resEta', hue='weights', legend=False,
-                                        ax=ax3[1, 1],
-                                        s=markerSize3, rasterized=True)
+                            sns.scatterplot(data=df_resids[selection], x='resXi', y='resEta', hue='weights', legend=False,
+                                            ax=ax3[1, 1],
+                                            s=markerSize3, rasterized=True)
 
-                        sns.scatterplot(data=df_resids[selection], x='xi', y='resXi', hue='weights', legend=False,
-                                        ax=ax3[0, 0],
-                                        s=markerSize3, rasterized=True)
-                        sns.scatterplot(data=df_resids[selection], x='xi', y='resEta', hue='weights', legend=False,
-                                        ax=ax3[1, 0],
-                                        s=markerSize3, rasterized=True)
+                            sns.scatterplot(data=df_resids[selection], x='xi', y='resXi', hue='weights', legend=False,
+                                            ax=ax3[0, 0],
+                                            s=markerSize3, rasterized=True)
+                            sns.scatterplot(data=df_resids[selection], x='xi', y='resEta', hue='weights', legend=False,
+                                            ax=ax3[1, 0],
+                                            s=markerSize3, rasterized=True)
 
-                        sns.scatterplot(data=df_resids[selection], x='xi', y='eta', hue='weights', legend=True,
-                                        ax=ax3[2, 0],
-                                        s=markerSize3, rasterized=True)
+                            sns.scatterplot(data=df_resids[selection], x='xi', y='eta', hue='weights', legend=True,
+                                            ax=ax3[2, 0],
+                                            s=markerSize3, rasterized=True)
 
-                        sns.scatterplot(data=df_resids[selection], x='resXi', y='eta', hue='weights', legend=False,
-                                        ax=ax3[2, 1],
-                                        s=markerSize3, rasterized=True)
-                        sns.scatterplot(data=df_resids[selection], x='resEta', y='eta', hue='weights', legend=False,
-                                        ax=ax3[2, 2],
-                                        s=markerSize3, rasterized=True)
+                            sns.scatterplot(data=df_resids[selection], x='resXi', y='eta', hue='weights', legend=False,
+                                            ax=ax3[2, 1],
+                                            s=markerSize3, rasterized=True)
+                            sns.scatterplot(data=df_resids[selection], x='resEta', y='eta', hue='weights', legend=False,
+                                            ax=ax3[2, 2],
+                                            s=markerSize3, rasterized=True)
 
-                        resLabels = ['res_xi [pix]', 'res_eta [pix]']
+                            resLabels = ['res_xi [pix]', 'res_eta [pix]']
 
-                        for axis in range(NAXIS):
-                            ax3[2, axis + 1].set_xlabel(resLabels[axis])
-                            ax3[axis, 0].set_ylabel(resLabels[axis])
+                            for axis in range(NAXIS):
+                                ax3[2, axis + 1].set_xlabel(resLabels[axis])
+                                ax3[axis, 0].set_ylabel(resLabels[axis])
 
-                            ax3[2, axis + 1].xaxis.set_major_locator(MultipleLocator(dRes))
-                            ax3[2, axis + 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
+                                ax3[2, axis + 1].xaxis.set_major_locator(MultipleLocator(dRes))
+                                ax3[2, axis + 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
 
-                            ax3[2, axis + 1].yaxis.set_major_locator(MultipleLocator(dY3))
-                            ax3[2, axis + 1].yaxis.set_minor_locator(MultipleLocator(dMY3))
+                                ax3[2, axis + 1].yaxis.set_major_locator(MultipleLocator(dY3))
+                                ax3[2, axis + 1].yaxis.set_minor_locator(MultipleLocator(dMY3))
 
-                            ax3[axis, 0].xaxis.set_major_locator(MultipleLocator(dX3))
-                            ax3[axis, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
+                                ax3[axis, 0].xaxis.set_major_locator(MultipleLocator(dX3))
+                                ax3[axis, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
 
-                            ax3[axis, 0].yaxis.set_major_locator(MultipleLocator(dRes))
-                            ax3[axis, 0].yaxis.set_minor_locator(MultipleLocator(dMRes))
+                                ax3[axis, 0].yaxis.set_major_locator(MultipleLocator(dRes))
+                                ax3[axis, 0].yaxis.set_minor_locator(MultipleLocator(dMRes))
 
-                            ax3[2, axis + 1].set_xlim(resMin, resMax)
-                            ax3[axis, 0].set_ylim(resMin, resMax)
+                                ax3[2, axis + 1].set_xlim(resMin, resMax)
+                                ax3[axis, 0].set_ylim(resMin, resMax)
 
-                            ax3[axis, 0].axhline(y=0, linewidth=1)
-                            ax3[2, axis + 1].axvline(x=0, linewidth=1)
+                                ax3[axis, 0].axhline(y=0, linewidth=1)
+                                ax3[2, axis + 1].axvline(x=0, linewidth=1)
 
-                        ax3[1, 1].xaxis.set_major_locator(MultipleLocator(dRes))
-                        ax3[1, 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
-                        ax3[1, 1].yaxis.set_major_locator(MultipleLocator(dRes))
-                        ax3[1, 1].yaxis.set_minor_locator(MultipleLocator(dMRes))
+                            ax3[1, 1].xaxis.set_major_locator(MultipleLocator(dRes))
+                            ax3[1, 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
+                            ax3[1, 1].yaxis.set_major_locator(MultipleLocator(dRes))
+                            ax3[1, 1].yaxis.set_minor_locator(MultipleLocator(dMRes))
 
-                        ax3[1, 1].axvline(x=0)
-                        ax3[1, 1].axhline(y=0)
+                            ax3[1, 1].axvline(x=0)
+                            ax3[1, 1].axhline(y=0)
 
-                        ax3[2, 0].axhline(linestyle='--', color='r', y=0, linewidth=1)
-                        ax3[2, 0].axvline(linestyle='--', color='r', x=0, linewidth=1)
+                            ax3[2, 0].axhline(linestyle='--', color='r', y=0, linewidth=1)
+                            ax3[2, 0].axvline(linestyle='--', color='r', x=0, linewidth=1)
 
-                        ax3[2, 0].set_xlabel(r'xi [pix]')
-                        ax3[2, 0].set_ylabel(r'eta [pix]')
+                            ax3[2, 0].set_xlabel(r'xi [pix]')
+                            ax3[2, 0].set_ylabel(r'eta [pix]')
 
-                        for iii in range(3):
-                            ax3[iii, 0].xaxis.set_major_locator(MultipleLocator(dX3))
-                            ax3[iii, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
+                            for iii in range(3):
+                                ax3[iii, 0].xaxis.set_major_locator(MultipleLocator(dX3))
+                                ax3[iii, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
 
-                            ax3[2, iii].yaxis.set_major_locator(MultipleLocator(dY3))
-                            ax3[2, iii].yaxis.set_minor_locator(MultipleLocator(dMY3))
+                                ax3[2, iii].yaxis.set_major_locator(MultipleLocator(dY3))
+                                ax3[2, iii].yaxis.set_minor_locator(MultipleLocator(dMY3))
 
-                        ax3[2, 0].set_xlim(xMin3, xMax3)
-                        ax3[2, 0].set_ylim(yMin3, yMax3)
+                            ax3[2, 0].set_xlim(xMin3, xMax3)
+                            ax3[2, 0].set_ylim(yMin3, yMax3)
 
-                        ax3[2, 0].set_aspect('equal')
+                            ax3[2, 0].set_aspect('equal')
 
-                        ax3[2, 0].invert_xaxis()
+                            ax3[2, 0].invert_xaxis()
 
-                        plt.subplots_adjust(wspace=0.0, hspace=0.0)
+                            plt.subplots_adjust(wspace=0.0, hspace=0.0)
 
-                        plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_kOrder{3:d}_retainedSources_commonCoordinates.pdf".format(outDir,
-                                                                                                                    baseImageFilename,
-                                                                                                                    self.pOrder,
-                                                                                                                    self.kOrder)
+                            plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_kOrder{3:d}_retainedSources_commonCoordinates.pdf".format(outDir,
+                                                                                                                        baseImageFilename,
+                                                                                                                        self.pOrder,
+                                                                                                                        self.kOrder)
 
-                        fig3.savefig(plotFilename3, dpi=300, bbox_inches='tight')
+                            fig3.savefig(plotFilename3, dpi=300, bbox_inches='tight')
 
-                        plt.close(fig=fig3)
+                            plt.close(fig=fig3)
 
-                        print()
+                            print()
 
             f = open(fitResultsFilename, 'w')
             for textResult in fitResultsText:
