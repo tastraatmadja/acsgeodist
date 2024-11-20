@@ -353,7 +353,7 @@ class SourceCollector:
 
             df_nObs[['nObs', 'nEpochs']].describe()
 
-            selection = df_nObs['nEpochs'] >= self.min_nEpoch
+            selection = df_nObs['nEpochs'] >= self.min_n_epoch
 
             print("SELECTED {0:d} SOURCES!".format(selection[selection].shape[0]))
 
@@ -419,11 +419,13 @@ class SourceCollector:
                     y[0::2, 0] = xi
                     y[1::2, 0] = eta
 
+                    chiSq = np.zeros(maxNModel)
                     lnLL = np.zeros(maxNModel)
                     LR = np.zeros(maxNModel)
                     lnPMD = np.zeros(maxNModel)
                     pVal = np.zeros(maxNModel)
                     nSigma = np.zeros(maxNModel)
+                    nuEff  = np.zeros(maxNModel)
                     prevNPars = 0
                     prevLnLL = -np.inf
                     lnPSum = -np.inf
@@ -474,15 +476,26 @@ class SourceCollector:
 
                         XTWX = X[model].T @ W @ X[model]
 
-                        covs.append(mse * linalg.inv(XTWX))
+                        XTWXInv =  linalg.inv(XTWX)
+
+                        H = X[model] @ XTWXInv @ X[model].T @ W
+
+                        nuEff[model] = np.nansum(weights) - np.trace(H)
+
+                        covs.append(mse * XTWXInv)
 
                         rms.append(np.sqrt(mse))
 
                         nEff.append(0.5 * np.nansum(weights))
 
+                        resStdDev = np.sqrt(np.nansum(weights * res**2) / np.nansum(weights) / nuEff[model])
+
                         ## covs.append(list(cov[triu_indices[model]].flatten()))
 
-                        lnLL[model] = stat.getLnLL(res, weights)
+                        chiSq[model] = stat.getChiSq(res, weights, np.ones_like(weights))
+                        lnLL[model]  = stat.getLnLL(res, weights)
+
+                        ## print(X[model].shape, weights.shape, np.nansum(weights), resStdDev, np.sqrt(mse), mse, chiSq[model], np.nansum(res**2), np.nansum(weights), np.trace(H), nuEff[model], chiSq[model] / nuEff[model])
 
                         lnPMD[model] = stat.getLnPMD(N_PARAMS[model], res, LOG_PM[model], weights=weights)
 
@@ -518,6 +531,9 @@ class SourceCollector:
                     bestRMS = rms[bestModel]
 
                     bestNEff = nEff[bestModel]
+
+                    bestChiSq    = chiSq[bestModel]
+                    bestRedChiSq = chiSq[bestModel] / nuEff[bestModel]
 
                     ## print("BEST_MODEL:", bestModel, nSigma[bestModel], pMD[bestModel], bestSolution)
                     ## print(bestSolution.shape, bestCov.shape)
@@ -561,7 +577,7 @@ class SourceCollector:
         if reOrientFrame:
             propMotionFilenameGDR3 = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}_GDR3Corr.txt'.format(outDir, tRef)
 
-            if os.path.exists(propMotionFilenameGDR3):
+            if (not os.path.exists(propMotionFilenameGDR3)):
                 print("RE-ORIENTING CELESTIAL FRAME USING GAIA DR3 STARS...")
                 print("QUERYING THE CATALOGUE...")
                 Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"

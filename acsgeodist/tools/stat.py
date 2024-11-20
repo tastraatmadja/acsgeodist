@@ -86,6 +86,9 @@ def getMahalanobisDistances(x, mean, invCov):
 def getBIC(k, n, chiSq):
     return chiSq + k * np.log(n)
 
+def getChiSq(res, weights, stdDev):
+    return np.nansum(weights * res**2 / stdDev**2) / np.nansum(weights)
+
 def getLnLL(res, weights):
     selection = weights > 0
     return 0.5 * (-LN_2PI * float(weights[selection].size) +
