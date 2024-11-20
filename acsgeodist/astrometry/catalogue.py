@@ -21,8 +21,6 @@ from acsgeodist.tools.time import convertTime
 
 N_WRITE = 100
 
-MIN_N_EPOCH = 5
-
 MIN_N_OBS = 3
 
 ONE_SIGMA   = 68.2689492
@@ -337,11 +335,14 @@ class SourceCollector:
         return obsDataFilenameAll, nObsDataFilename
 
     def calculateAstrometricSolutions(self, obsDataFilename, nObsDataFilename, c0, refPix_x=None, refPix_y=None,
-                                      maxNModel=2, nIter=5, tRef=2016.0, outDir='./', reOrientFrame=True):
+                                      maxNModel=2, nIter=5, minNEpoch=5, tRef=2016.0, outDir='./', reOrientFrame=True):
         properMotionFilename = '{0:s}/47Tuc_PPMPLXCatalogue_modelSelection_weightedRegression_tRef{1:0.1f}.csv'.format(
             outDir, tRef)
 
         if (not os.path.exists(properMotionFilename)):
+            if (minNEpoch is not None):
+                self.min_n_epoch = minNEpoch
+
             triu_indices = []
             for model in range(maxNModel):
                 triu_indices.append(np.triu_indices(N_PARAMS[model]))
@@ -352,7 +353,7 @@ class SourceCollector:
 
             df_nObs[['nObs', 'nEpochs']].describe()
 
-            selection = df_nObs['nEpochs'] >= MIN_N_EPOCH
+            selection = df_nObs['nEpochs'] >= self.min_nEpoch
 
             print("SELECTED {0:d} SOURCES!".format(selection[selection].shape[0]))
 
@@ -558,112 +559,137 @@ class SourceCollector:
             print("FILE EXISTS ALREADY!")
 
         if reOrientFrame:
-            print("RE-ORIENTING CELESTIAL FRAME USING GAIA DR3 STARS...")
-            print("QUERYING THE CATALOGUE...")
-            Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
-            Gaia.ROW_LIMIT = -1
-
-            print(c0)
-            print(c0.ra, c0.dec)
-
-            coord = SkyCoord(ra=c0.ra, dec=c0.dec, frame='icrs')
-
-            g = Gaia.query_object_async(coordinate=coord, width=WIDTH, height=HEIGHT)
-
-            gaia_selection = (g['ruwe'] >= MIN_RUWE) & (g['ruwe'] <= MAX_RUWE)
-
-            g = g[gaia_selection]
-
-            print("FOUND {0:d} GAIA SOURCES!".format(len(g)))
-
-            gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
-
-            c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
-                              pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
-                              obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
-
-            print("GETTING THE SHIFT AND ROTATION MATRIX...")
-
-            xi0_gdr3, eta0_gdr3 = coords.getNormalCoordinates(c_gdr3, coords.getNormalTriad(c0))
-
-            xi0_gdr3_pix  = (xi0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
-            eta0_gdr3_pix = (eta0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
-
-            df_ppm = pd.read_csv(properMotionFilename)
-
-            gdr3Sources = df_ppm['sourceID'].str.contains('GDR3')
-
-            df_ppm['xi0_gdr3'] = np.nan
-            df_ppm['eta0_gdr3'] = np.nan
-
-            hasGDR3_indices_original = np.argwhere(gdr3Sources).flatten()
-
-            hasGDR3_indices = []
-            foundIndices = []
-            for index in hasGDR3_indices_original:
-                sourceID = df_ppm.iloc[index]['sourceID']
-                matchIndex = np.argwhere(gdr3_id == sourceID).flatten()[0]
-                bestModel = df_ppm.iloc[index]['bestModel']
-
-                if (not matchIndex in foundIndices):
-                    if (bestModel < 3):
-                        '''
-                        print(index, sourceID, matchIndex, gdr3_id[matchIndex], df_ppm.iloc[index]['xi0'],
-                              xi0_gdr3_pix[matchIndex], df_ppm.iloc[index]['eta0'], eta0_gdr3_pix[matchIndex])
-                        ''';
-
-                        df_ppm.at[index, 'xi0_gdr3']  = xi0_gdr3_pix[matchIndex]
-                        df_ppm.at[index, 'eta0_gdr3'] = eta0_gdr3_pix[matchIndex]
-
-                        hasGDR3_indices.append(index)
-                    foundIndices.append(matchIndex)
-
-            hasGDR3_indices = np.array(hasGDR3_indices)
-
-            df_new = pd.DataFrame(columns=['m', 'x', 'y', 'pm_x', 'pm_y'])
-
-            df_new['m'] = df_ppm['meanMag']
-
-            xi0, eta0 = df_ppm.iloc[hasGDR3_indices]['xi0'], df_ppm.iloc[hasGDR3_indices]['eta0']
-            xi0_gdr3, eta0_gdr3 = df_ppm.iloc[hasGDR3_indices]['xi0_gdr3'], df_ppm.iloc[hasGDR3_indices]['eta0_gdr3']
-
-            X, scaler       = sip.buildModel(xi0, eta0, 1)
-            XAll, scalerAll = sip.buildModel(df_ppm['xi0'], df_ppm['eta0'], 1)
-
-            reg = LinearRegression(fit_intercept=False)
-
-            for i in range(acsconstants.NAXIS):
-                if (i == 0):
-                    y = xi0_gdr3
-                elif (i == 1):
-                    y = eta0_gdr3
-
-                reg.fit(X, y)
-
-                print(reg.coef_)
-
-                new_coords = reg.predict(XAll)
-                new_pm = df_ppm['pm_xi'] * reg.coef_[1] + df_ppm['pm_eta'] * reg.coef_[2]
-
-                if ((refPix_x is not None) and (refPix_y is not None)):
-                    ## Add 1 because in pixel space, coordinates starts from 1, NOT 0!
-                    if (i == 0):
-                        df_new['x']    = refPix_x - new_coords + 1.0
-                        df_new['pm_x'] = -new_pm
-                    elif (i == 1):
-                        df_new['y']    = refPix_y + new_coords + 1.0
-                        df_new['pm_y'] = new_pm
-                else:
-                    if (i == 0):
-                        df_new['x']    = new_coords
-                        df_new['pm_x'] = new_pm
-                    elif (i == 1):
-                        df_new['y']    = new_coords
-                        df_new['pm_y'] = new_pm
-
             propMotionFilenameGDR3 = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}_GDR3Corr.txt'.format(outDir, tRef)
 
-            df_new.to_csv(propMotionFilenameGDR3, sep=' ', header=False, index=True)
+            if os.path.exists(propMotionFilenameGDR3):
+                print("RE-ORIENTING CELESTIAL FRAME USING GAIA DR3 STARS...")
+                print("QUERYING THE CATALOGUE...")
+                Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
+                Gaia.ROW_LIMIT = -1
+
+                coord = SkyCoord(ra=c0.ra, dec=c0.dec, frame='icrs')
+
+                g = Gaia.query_object_async(coordinate=coord, width=WIDTH, height=HEIGHT)
+
+                gaia_selection = (g['ruwe'] >= MIN_RUWE) & (g['ruwe'] <= MAX_RUWE)
+
+                g = g[gaia_selection]
+
+                print("FOUND {0:d} GAIA SOURCES!".format(len(g)))
+
+                gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+
+                c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
+                                  pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
+                                  obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
+
+                print("GETTING THE SHIFT AND ROTATION MATRIX...")
+
+                xi0_gdr3, eta0_gdr3 = coords.getNormalCoordinates(c_gdr3, coords.getNormalTriad(c0))
+
+                xi0_gdr3_pix  = (xi0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
+                eta0_gdr3_pix = (eta0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
+
+                df_ppm = pd.read_csv(properMotionFilename)
+
+                gdr3Sources = df_ppm['sourceID'].str.contains('GDR3')
+
+                df_ppm['xi0_gdr3'] = np.nan
+                df_ppm['eta0_gdr3'] = np.nan
+
+                hasGDR3_indices_original = np.argwhere(gdr3Sources).flatten()
+
+                if (hasGDR3_indices_original.size > 0):
+                    hasGDR3_indices = []
+                    foundIndices = []
+                    for index in hasGDR3_indices_original:
+                        sourceID = df_ppm.iloc[index]['sourceID']
+                        matchIndex = np.argwhere(gdr3_id == sourceID).flatten()[0]
+                        bestModel = df_ppm.iloc[index]['bestModel']
+
+                        if (not matchIndex in foundIndices):
+                            if (bestModel < 3):
+                                '''
+                                print(index, sourceID, matchIndex, gdr3_id[matchIndex], df_ppm.iloc[index]['xi0'],
+                                      xi0_gdr3_pix[matchIndex], df_ppm.iloc[index]['eta0'], eta0_gdr3_pix[matchIndex])
+                                ''';
+
+                                df_ppm.at[index, 'xi0_gdr3']  = xi0_gdr3_pix[matchIndex]
+                                df_ppm.at[index, 'eta0_gdr3'] = eta0_gdr3_pix[matchIndex]
+
+                                hasGDR3_indices.append(index)
+                            foundIndices.append(matchIndex)
+                else:
+                    gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+
+                    xi0_pix  = (df_ppm['xi0'].values * u.pix * acsconstants.ACS_PLATESCALE).decompose()
+                    eta0_pix = (df_ppm['eta0'].values * u.pix * acsconstants.ACS_PLATESCALE).decompose()
+
+                    idx, sep, _ = coords.getCelestialCoordinatesFromNormalCoordinates(xi0_pix, eta0_pix,
+                                                                                      c0).match_to_catalog_sky(c_gdr3)
+
+                    ## c_refCat.match_to_catalog_sky(c_gdr3)
+
+                    sep_pix = sep.to(u.mas) / acsconstants.ACS_PLATESCALE
+
+                    selection_gdr3 = sep_pix < 3.0 * u.pix
+
+                    hasGDR3_indices = np.argwhere(selection_gdr3).flatten()
+
+                    df_ppm.loc[hasGDR3_indices, 'sourceID']  = gdr3_id[idx[selection_gdr3]]
+                    df_ppm.loc[hasGDR3_indices, 'xi0_gdr3']  = xi0_gdr3_pix[idx[selection_gdr3]]
+                    df_ppm.loc[hasGDR3_indices, 'eta0_gdr3'] = eta0_gdr3_pix[idx[selection_gdr3]]
+
+                    nMatch = selection_gdr3[selection_gdr3].size
+
+                    print("Found {0:d} GDR3 matches!".format(nMatch))
+
+                hasGDR3_indices = np.array(hasGDR3_indices)
+
+                df_new = pd.DataFrame(columns=['m', 'x', 'y', 'pm_x', 'pm_y'])
+
+                df_new['m'] = df_ppm['meanMag']
+
+                xi0, eta0 = df_ppm.iloc[hasGDR3_indices]['xi0'], df_ppm.iloc[hasGDR3_indices]['eta0']
+                xi0_gdr3, eta0_gdr3 = df_ppm.iloc[hasGDR3_indices]['xi0_gdr3'], df_ppm.iloc[hasGDR3_indices]['eta0_gdr3']
+
+                X, scaler       = sip.buildModel(xi0, eta0, 1)
+                XAll, scalerAll = sip.buildModel(df_ppm['xi0'], df_ppm['eta0'], 1)
+
+                reg = LinearRegression(fit_intercept=False)
+
+                for i in range(acsconstants.NAXIS):
+                    if (i == 0):
+                        y = xi0_gdr3
+                    elif (i == 1):
+                        y = eta0_gdr3
+
+                    reg.fit(X, y)
+
+                    print(reg.coef_)
+
+                    new_coords = reg.predict(XAll)
+                    new_pm = df_ppm['pm_xi'] * reg.coef_[1] + df_ppm['pm_eta'] * reg.coef_[2]
+
+                    if ((refPix_x is not None) and (refPix_y is not None)):
+                        ## Add 1 because in pixel space, coordinates starts from 1, NOT 0!
+                        if (i == 0):
+                            df_new['x']    = refPix_x - new_coords + 1.0
+                            df_new['pm_x'] = -new_pm
+                        elif (i == 1):
+                            df_new['y']    = refPix_y + new_coords + 1.0
+                            df_new['pm_y'] = new_pm
+                    else:
+                        if (i == 0):
+                            df_new['x']    = new_coords
+                            df_new['pm_x'] = new_pm
+                        elif (i == 1):
+                            df_new['y']    = new_coords
+                            df_new['pm_y'] = new_pm
+
+                df_new.to_csv(propMotionFilenameGDR3, sep=' ', header=False, index=True)
+            else:
+                print("CELESTIAL FRAME ALREADY RE-ORIENTED USING GAIA DR3 STARS!")
 
             return properMotionFilename, propMotionFilenameGDR3
         else:
@@ -709,6 +735,11 @@ class CrossMatcher:
                 c_refCat = SkyCoord(ra=self.refCat['alpha'].values * u.deg, dec=self.refCat['delta'].values * u.deg,
                                     frame='icrs')
 
+                xiRef, etaRef = coords.getNormalCoordinates(c_refCat, self.pqr0)
+
+                xiRef  = (xiRef / acsconstants.ACS_PLATESCALE).decompose().value
+                etaRef = (etaRef / acsconstants.ACS_PLATESCALE).decompose().value
+
                 df_hst1pass = pd.read_csv(hst1passFile)
 
                 alpha = df_hst1pass['alpha'].values
@@ -717,6 +748,17 @@ class CrossMatcher:
                 selection = ~np.isnan(alpha) & ~np.isnan(delta)
 
                 c_image = SkyCoord(ra=alpha[selection] * u.deg, dec=delta[selection] * u.deg, frame='icrs')
+
+                xi_init, eta_init = coords.getNormalCoordinates(c_image, self.pqr0)
+
+                xi  = np.full(len(df_hst1pass), np.nan) * xi_init.unit
+                eta = np.full(len(df_hst1pass), np.nan) * eta_init.unit
+
+                xi[selection]  = deepcopy(xi_init)
+                eta[selection] = deepcopy(eta_init)
+
+                xi  = (xi / acsconstants.ACS_PLATESCALE).decompose().value
+                eta = (eta / acsconstants.ACS_PLATESCALE).decompose().value
 
                 idx_init, sep_init, _ = c_image.match_to_catalog_sky(c_refCat)
 
@@ -748,11 +790,19 @@ class CrossMatcher:
                 df_hst1pass['hasRefCat']   = False
                 df_hst1pass['refCatID']    = -1
                 df_hst1pass['refCatIndex'] = -1
+                df_hst1pass['xPred']       = np.nan
+                df_hst1pass['yPred']       = np.nan
+                df_hst1pass['xRef']        = np.nan
+                df_hst1pass['yRef']        = np.nan
 
                 ## Append new columns to the hst1pass results
                 df_hst1pass['hasRefCat']                  = deepcopy(hasRefCat)
                 df_hst1pass.loc[hasRefCat, 'refCatID']    = self.refCat.iloc[idx[hasRefCat]]['id'].values
                 df_hst1pass.loc[hasRefCat, 'refCatIndex'] = deepcopy(idx[hasRefCat])
+                df_hst1pass.loc[hasRefCat, 'xPred']       = deepcopy(xi[hasRefCat])
+                df_hst1pass.loc[hasRefCat, 'yPred']       = deepcopy(eta[hasRefCat])
+                df_hst1pass.loc[hasRefCat, 'xRef']        = deepcopy(xiRef[idx[hasRefCat]])
+                df_hst1pass.loc[hasRefCat, 'yRef']        = deepcopy(etaRef[idx[hasRefCat]])
 
                 df_hst1pass.drop(columns=['nAppearances', 'refCatMag', 'dx', 'dy', 'retained', 'weights', 'xi', 'eta',
                                           'xiRef', 'etaRef', 'resXi', 'resEta', 'alpha', 'delta', 'sourceID']).to_csv(

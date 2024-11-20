@@ -1066,7 +1066,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.max_pos_targs = max_pos_targs
 
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', makePlots=True,
-                                                 **kwargs):
+                                                 saveIntermediateResults=True, **kwargs):
         nOkay    = 0
         nDataAll = np.zeros(2, dtype=int)
 
@@ -1641,7 +1641,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         coeffsB = reg.coef_.flatten() * scalerY / scalerArrayAll
                         ''';
 
-                        if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
+                        if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)) and saveIntermediateResults:
                             coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
                                 outDir, chip, self.pOrder, self.kOrder, self.nKnots, iteration + 1, iteration2 + 1)
 
@@ -1993,23 +1993,23 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         else:
                             selection = hst1pass['refCatIndex'] >= 0
 
-                            hst1pass['retained'][selection] = True
+                            if (selection[selection].size > 0):
+                                hst1pass['retained'][selection] = True
 
-                            hst1pass['dx'][selection] = hst1pass['xRef'][selection] - hst1pass['xPred'][selection]
-                            hst1pass['dy'][selection] = hst1pass['yRef'][selection] - hst1pass['yPred'][selection]
+                                hst1pass['dx'][selection] = hst1pass['xRef'][selection] - hst1pass['xPred'][selection]
+                                hst1pass['dy'][selection] = hst1pass['yRef'][selection] - hst1pass['yPred'][selection]
 
-                            ## calculate the initial values of the weights
-                            residuals = np.vstack([hst1pass['dx'][selection].value,
-                                                   hst1pass['dy'][selection].value]).T
+                                ## calculate the initial values of the weights
+                                residuals = np.vstack([hst1pass['dx'][selection].value,
+                                                       hst1pass['dy'][selection].value]).T
 
-                            ## Use the weights to estimate the mean and covariance matrix of the residual distribution
-                            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals,
-                                                                                   np.ones(residuals.shape[0]))
+                                ## Use the weights to estimate the mean and covariance matrix of the residual distribution
+                                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals,
+                                                                                       np.ones(residuals.shape[0]))
 
-                            ## Assign weights based on the standardized distance of the residuals from the mean
-                            hst1pass['weights'][selection] = stat.wdecay(stat.getMahalanobisDistances(residuals,
-                                                                                                      mean,
-                                                                                                      np.linalg.inv(cov)))
+                                ## Assign weights based on the standardized distance of the residuals from the mean
+                                hst1pass['weights'][selection] = stat.wdecay(
+                                    stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
 
                         textResults = ""
                         for chip in chips:
