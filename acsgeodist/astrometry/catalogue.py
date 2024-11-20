@@ -572,7 +572,7 @@ class SourceCollector:
 
             print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
         else:
-            print("FILE EXISTS ALREADY!")
+            print("PROPER MOTION CATALOGUE EXISTS ALREADY!")
 
         if reOrientFrame:
             propMotionFilenameGDR3 = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}_GDR3Corr.txt'.format(outDir, tRef)
