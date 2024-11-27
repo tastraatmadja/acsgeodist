@@ -2104,13 +2104,30 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             selection  = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & hst1pass['retained']
                             refStarIdx = hst1pass['refCatIndex'][selection].value
 
-                            XCorr = hst1pass['xPred'][selection].value
-                            YCorr = hst1pass['yPred'][selection].value
+                            hst1pass['xiRef'][selection]  = self.refCat[refStarIdx]['xt'] / vaFactor
+                            hst1pass['etaRef'][selection] = self.refCat[refStarIdx]['yt'] / vaFactor
 
                             CDMatrix = np.full((2, 3), np.nan)
 
                             if (selection[selection].size > 10):
                                 for iteration3 in range(N_ITER_CD):
+                                    CDMatrix = self._getCDMatrix(hst1pass['xPred'][selection].value,
+                                                                 hst1pass['yPred'][selection].value,
+                                                                 hst1pass['xiRef'][selection].value,
+                                                                 hst1pass['etaRef'][selection].value,
+                                                                 weights=hst1pass['weights'][selection].value)
+
+                                    selectionChip = hst1pass['k'] == chip
+
+                                    H, _ = sip.buildModel(hst1pass['xPred'][selectionChip].value,
+                                                          hst1pass['yPred'][selectionChip].value,
+                                                          1)
+
+                                    ## Calculate the normal coordinates Xi, Eta and assign them to the table
+                                    hst1pass['xi'][selectionChip]  = H @ CDMatrix[0]
+                                    hst1pass['eta'][selectionChip] = H @ CDMatrix[1]
+
+                                    '''
                                     ## Calculate the normal coordinates relative to the pqr triad centered on the current CRVAL1,2
                                     self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef, pqr0Im)
 
@@ -2152,6 +2169,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                             ((H @ CDMatrix[0]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
                                     hst1pass['eta'][selectionChip] = (
                                             ((H @ CDMatrix[1]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
+                                    ''';
 
                                     ## Calculate the residuals
                                     hst1pass['resXi'][selection] = (
@@ -2181,6 +2199,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                                 alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
 
+                            '''
                             xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
 
                             xi0  = float(self.wcsRef.to_header()['CRPIX1']) - xi0[0]
@@ -2199,6 +2218,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                     hst1pass['xi'][selection].value - hst1pass['xiRef'][selection].value)
                             hst1pass['resEta'][selection] = (
                                     hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
+                            ''';
 
                             rmsXi  = np.nan
                             rmsEta = np.nan
@@ -2236,6 +2256,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         fitResultsText.append(textResults)
 
                         ## Assign name for each sources in each chip. We first grab the xi, eta from the catalogue.
+                        '''
                         xi  = (hst1pass['xi'] * u.pix)  * acsconstants.ACS_PLATESCALE
                         eta = (hst1pass['eta'] * u.pix) * acsconstants.ACS_PLATESCALE
 
@@ -2248,17 +2269,29 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         ## Calculate the equatorial coordinates and assign them to the table
                         c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], c0, frame='icrs')
+                        ''';
+                        argsel = np.argwhere(~np.isnan(hst1pass['xi']) & ~np.isnan(hst1pass['eta'])).flatten()
 
-                        hst1pass['alpha'][argsel] = c.ra.value
-                        hst1pass['delta'][argsel] = c.dec.value
+                        hst1pass['alpha'][argsel], hst1pass['delta'][argsel] = self.wcsRef.wcs_pix2world(
+                            hst1pass['xi'][argsel], hst1pass['eta'][argsel], 1)
+
+                        hst1pass['sourceID'][argsel] = astro.generateSourceID(
+                            SkyCoord(ra=hst1pass['alpha'][argsel] * u.deg, dec=hst1pass['delta'][argsel] * u.deg,
+                                     frame='icrs'))
+
+                        ## hst1pass['alpha'][argsel] = c.ra.value
+                        ## hst1pass['delta'][argsel] = c.dec.value
 
                         ## Based on the equatorial coordinates assign a source ID for each source
-                        hst1pass['sourceID'][argsel] = astro.generateSourceID(c)
+                        ## hst1pass['sourceID'][argsel] = astro.generateSourceID(c)
 
                         ## Now we query the Gaia catalogue, if cross_match is set to True. For this we will have different
                         ## criteria than before. We now only cross-match sources with 0 < q <= Q_MAX, for these are more likely
                         ## to be bona-fide point-sources (i.e. stars).
                         if self.cross_match:
+                            xi  = (hst1pass['xi'] * u.pix) * acsconstants.ACS_PLATESCALE
+                            eta = (hst1pass['eta'] * u.pix) * acsconstants.ACS_PLATESCALE
+
                             argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta) & (hst1pass['q'] > Q_MIN) & (
                                         hst1pass['q'] <= Q_MAX)).flatten()
 

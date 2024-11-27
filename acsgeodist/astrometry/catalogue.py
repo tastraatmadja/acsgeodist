@@ -66,7 +66,7 @@ class SourceCollector:
         if (min_n_epoch is not None):
             self.min_n_epoch = min_n_epoch
 
-    def collectIndividualSources(self, fitSummaryTableFilenames, residsFilenames, c0, pOrder=5, outDir='./'):
+    def collectIndividualSources(self, fitSummaryTableFilenames, residsFilenames, c0, wcsRef, pOrder=5, outDir='./'):
         if not os.path.exists(outDir):
             os.makedirs(outDir)
 
@@ -201,7 +201,11 @@ class SourceCollector:
                     argsel = np.argwhere(
                         ~np.isnan(xi) & ~np.isnan(eta) & (df_resids['q'] > self.qMin) & (df_resids['q'] <= self.qMax)).flatten()
 
-                    c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], c0, frame='icrs')
+                    ## c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], c0, frame='icrs')
+                    alpha, delta = wcsRef.wcs_pix2world(df_resids.iloc[argsel]['xi'].values,
+                                                        df_resids.iloc[argsel]['eta'].values, 1)
+
+                    c = SkyCoord(ra=alpha * u.deg, dec=delta * u.deg, frame='icrs')
 
                     sourceIDs = list(df_resids.iloc[argsel]['sourceID'])
 
