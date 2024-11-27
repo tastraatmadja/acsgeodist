@@ -959,11 +959,11 @@ class SIPEstimator:
 
         reg = linear_model.LinearRegression(fit_intercept=False, copy_X=True)
 
-        reg.fit(H, xiRef)
+        reg.fit(H, xiRef, sample_weight=weights)
 
         C1 = reg.coef_
 
-        reg.fit(H, etaRef)
+        reg.fit(H, etaRef, sample_weight=weights)
 
         C2 = reg.coef_
 
