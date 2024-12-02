@@ -41,8 +41,8 @@ MIN_RUWE = 0.8
 MAX_RUWE = 1.2
 
 class SourceCollector:
-    def __init__(self, qMin=None, qMax=None, min_t_exp=None, min_n_stars=None, max_pos_targs=None, max_sep=None,
-                 min_n_epoch=None, min_n_obs=None):
+    def __init__(self, wcsRef, c0, qMin=None, qMax=None, min_t_exp=None, min_n_stars=None, max_pos_targs=None, max_sep=None,
+                 min_n_epoch=None, min_n_obs=None, min_t_range=1.0, tRef=Time(2016.00, format='jyear', scale='tcb')):
         self.qMin              = 1.e-6
         self.qMax              = 0.5
         self.min_t_exp         = 99.0
@@ -51,7 +51,13 @@ class SourceCollector:
         self.max_sep           = 1.0 * u.pix
         self.min_n_epoch       = 5
         self.min_n_obs         = 10
+        self.min_t_range       = 1.0
         self.n_sigma_threshold = deepcopy(N_SIGMA_THRESHOLD)
+        self.tRef              = deepcopy(tRef)
+        self.wcsRef            = deepcopy(wcsRef)
+        self.c0                = deepcopy(c0)
+        self.pqr0              = coords.getNormalTriad(self.c0)
+        self.reg               = LinearRegression(fit_intercept=False, copy_X=False)
 
         if (qMin is not None):
             self.qMin = qMin
@@ -69,18 +75,20 @@ class SourceCollector:
             self.min_n_epoch = min_n_epoch
         if (min_n_obs is not None):
             self.min_n_obs = min_n_obs
+        if (min_t_range is not None):
+            self.min_t_range = min_t_range
 
-    def collectIndividualSources(self, fitSummaryTableFilenames, residsFilenames, c0, wcsRef, pOrder=5, outDir='./'):
+    def collectIndividualSources(self, fitSummaryTableFilenames, residsFilenames, pOrder=5, outDir='./'):
         if not os.path.exists(outDir):
             os.makedirs(outDir)
 
         df_fitResults = reader.readFitResults(fitSummaryTableFilenames, pOrder)
 
-        df_fitResults['i'] = [rootname.replace('_flc', '')[0] for rootname in df_fitResults['rootname']]
+        df_fitResults['i']   = [rootname.replace('_flc', '')[0] for rootname in df_fitResults['rootname']]
         df_fitResults['ppp'] = [rootname.replace('_flc', '')[1:4] for rootname in df_fitResults['rootname']]
-        df_fitResults['ss'] = [rootname.replace('_flc', '')[4:6] for rootname in df_fitResults['rootname']]
-        df_fitResults['oo'] = [rootname.replace('_flc', '')[6:8] for rootname in df_fitResults['rootname']]
-        df_fitResults['t'] = [rootname.replace('_flc', '')[8] for rootname in df_fitResults['rootname']]
+        df_fitResults['ss']  = [rootname.replace('_flc', '')[4:6] for rootname in df_fitResults['rootname']]
+        df_fitResults['oo']  = [rootname.replace('_flc', '')[6:8] for rootname in df_fitResults['rootname']]
+        df_fitResults['t']   = [rootname.replace('_flc', '')[8] for rootname in df_fitResults['rootname']]
 
         tBins = []
         tMins = []
@@ -154,6 +162,9 @@ class SourceCollector:
 
             names    = df_nObs['sourceID']
             catalog  = SkyCoord(ra=df_nObs['alpha'].values * u.deg, dec=df_nObs['delta'].values * u.deg,
+                                pm_ra_cosdec=df_nObs['pm_ra'].values * u.mas / u.yr,
+                                pm_dec=df_nObs['pm_dec'].values * u.mas / u.yr,
+                                obstime=Time(df_nObs['epoch'].values, format='jyear', scale='tcb'),
                                 distance=1, frame='icrs')
             nObsData = df_nObs['nObs'].values.tolist()
             nEpochs  = df_nObs['nEpochs'].values.tolist()
@@ -164,6 +175,8 @@ class SourceCollector:
         nRowsTotal   = 0
         thisFileDone = []
         iterate      = range(nFiles)
+        timeRange    = 0.0
+        prevTime     = 0.0
         for i in iterate:
             startTime = time.time()
 
@@ -173,7 +186,7 @@ class SourceCollector:
 
             df_coeffs = df_fitResults[(df_fitResults['rootname'].str.contains(rootname))]
 
-            tObs     = df_coeffs['time'].values[0]
+            tObs     = Time(df_coeffs['time'].values[0], format='decimalyear', scale='ut1')
             tExp     = df_coeffs['tExp'].values[0]
             vaFactor = df_coeffs['vaFactor'].values[0]
             nStars   = df_coeffs['nStars'].values[0]
@@ -197,12 +210,13 @@ class SourceCollector:
                 if (not done):
                     print('.')
                     print("Processing {0:s}... ".format(rootname), end='')
+
                     df_resids = pd.read_csv(residsFile)
 
-                    df_resids['time_ut1'] = tObs
+                    df_resids['time_tcb'] = tObs.tcb.jyear
                     df_resids['vaFactor'] = vaFactor
                     df_resids['rootname'] = rootname
-                    df_resids['epochID'] = epochID
+                    df_resids['epochID']  = epochID
 
                     xi  = df_resids['xi'].values  * df_resids['vaFactor'].values
                     eta = df_resids['eta'].values * df_resids['vaFactor'].values
@@ -210,36 +224,44 @@ class SourceCollector:
                     argsel = np.argwhere(
                         ~np.isnan(xi) & ~np.isnan(eta) & (df_resids['q'] > self.qMin) & (df_resids['q'] <= self.qMax)).flatten()
 
-                    ## c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], c0, frame='icrs')
-                    alpha, delta = wcsRef.wcs_pix2world(xi[argsel], eta[argsel], 1)
+                    ## c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], self.c0, frame='icrs')
+                    alpha, delta = self.wcsRef.wcs_pix2world(xi[argsel], eta[argsel], 1)
 
                     c = SkyCoord(ra=alpha * u.deg, dec=delta * u.deg, frame='icrs')
 
                     sourceIDs = list(df_resids.iloc[argsel]['sourceID'])
+                    obstime   = df_resids.iloc[argsel]['time_tcb'].values
 
                     ## Once we get the list of sourceIDs we want and their corresponding indices, we drop the sourceID column to save space
                     df_resids = df_resids.drop(columns=['sourceID'])
 
                     ## Populate the reference catalog, names list, and observation data with the data from the first plate
                     if (len(names) <= 0):
-                        names = deepcopy(sourceIDs)
-                        catalog = SkyCoord(ra=c.ra, dec=c.dec, distance=1, frame='icrs')
-                        obsData = [pd.DataFrame([df_resids.iloc[index]]) for index in argsel]
+                        names    = deepcopy(sourceIDs)
+                        catalog  = SkyCoord(ra=c.ra, dec=c.dec, pm_ra_cosdec=np.zeros_like(c.ra.value) * u.mas / u.yr,
+                                            pm_dec=np.zeros_like(c.dec.value) * u.mas / u.yr,
+                                            obstime=Time(obstime, format='jyear', scale='tcb'),
+                                            distance=1, frame='icrs')
+                        obsData  = [pd.DataFrame([df_resids.iloc[index]]) for index in argsel]
                         nObsData = np.ones(len(sourceIDs), dtype=int).tolist()
-                        nEpochs = np.ones(len(sourceIDs), dtype=int).tolist()
+                        nEpochs  = np.ones(len(sourceIDs), dtype=int).tolist()
                         deltaT   = np.zeros(len(sourceIDs), dtype=float).tolist()
                         epochIDs = np.full((len(sourceIDs), 1), epochID, dtype=int).tolist()
+                        prevTime = tObs.tcb.jyear
                     else:
+                        catalog_obs = catalog.apply_space_motion(tObs)
+
                         ## Now we do cross-matching
-                        idx, d2d, _ = c.match_to_catalog_sky(catalog)
+                        idx, d2d, _ = c.match_to_catalog_sky(catalog_obs)
 
                         d2d_pix = (d2d / acsconstants.ACS_PLATESCALE).decompose()
 
                         ## Select matching sources
                         matches = d2d_pix < self.max_sep
 
-                        ra_new = []
-                        dec_new = []
+                        ra_new   = []
+                        dec_new  = []
+                        time_new = []
 
                         ## Cycle over the rows, matches, and the indices of the reference catalog
                         for ii, (index, match, matchIdx) in enumerate(zip(argsel, matches, idx)):
@@ -252,8 +274,8 @@ class SourceCollector:
                                 obsData[matchIdx] = pd.concat([obsData[matchIdx], row], ignore_index=True)
                                 obsData[matchIdx].reset_index()
 
-                                deltaT[matchIdx] = (obsData[matchIdx]['time_ut1'].max() -
-                                                    obsData[matchIdx]['time_ut1'].min())
+                                deltaT[matchIdx] = (obsData[matchIdx]['time_tcb'].max() -
+                                                    obsData[matchIdx]['time_tcb'].min())
 
                                 nObsData[matchIdx] += 1
 
@@ -275,20 +297,36 @@ class SourceCollector:
 
                                 ra_new.append(c[ii].ra.deg)
                                 dec_new.append(c[ii].dec.deg)
+                                time_new.append(tObs.tcb.jyear)
 
-                        ra_new = np.array(ra_new)
-                        dec_new = np.array(dec_new)
+                        ra_new   = np.array(ra_new)
+                        dec_new  = np.array(dec_new)
+                        time_new = np.array(time_new)
 
                         ## Update the catalogs coordinates
-                        catalog = coordinates.concatenate([catalog,
-                                                           SkyCoord(ra=ra_new * u.deg, dec=dec_new * u.deg, distance=1,
-                                                                    frame='icrs')])
+                        ## catalog = coordinates.concatenate([catalog, new_catalog])
+                        catalog = self._concatenateCatalogues(catalog,
+                                                              SkyCoord(ra=ra_new * u.deg, dec=dec_new * u.deg,
+                                                                       pm_ra_cosdec=np.zeros_like(ra_new) * u.mas / u.yr,
+                                                                       pm_dec=np.zeros_like(dec_new) * u.mas / u.yr,
+                                                                       obstime=Time(time_new, format='jyear', scale='tcb'),
+                                                                       distance=1, frame='icrs'))
 
                     nRowsTotal += xi.size
 
-                    catalog = self._generateNewCatalog(catalog, obsData, np.array(nObsData), wcsRef, median=True)
+                    timeRange = tObs.tcb.jyear - prevTime
 
-                    print(len(names), len(catalog), len(obsData), len(deltaT), nRowsTotal, end='')
+                    calculatePM = False
+                    if (timeRange > 1.0):
+                        prevTime = tObs.tcb.jyear
+
+                        calculatePM = True
+
+                    catalog = self._generateNewCatalog(catalog, obsData, np.array(nObsData), np.array(deltaT),
+                                                       calculate_proper_motion=calculatePM)
+
+                    print(len(names), len(catalog), len(obsData), len(deltaT), nRowsTotal, "{0:0.3}".format(timeRange),
+                          end='')
                     thisFileDone.append(rootname)
 
                     elapsedTime = time.time() - startTime
@@ -300,14 +338,12 @@ class SourceCollector:
                 print(".")
 
             if ((((i % nWrite) == 0) and (i > 0)) or (i == iterate[-1])):
-                if (len(names) > 0):
+                if ((len(names) > 0) and (len(obsData) > 0)):
                     print("Writing observation data and flushing out the dictionary...")
 
                     startTimeFlush = time.time()
 
-                    argsel = np.argwhere(np.array(nObsData) >= self.min_n_obs).flatten()
-
-                    print("NUMBER OF SOURCES SO FAR (SELECTED):", len(nEpochs), len(argsel))
+                    print("NUMBER OF SOURCES SO FAR:", len(names))
 
                     mode = 'w'
 
@@ -316,12 +352,8 @@ class SourceCollector:
 
                     store = pd.HDFStore(obsDataFilenameAll, mode)
 
-                    for index in argsel:
-                        name = names[index]
-
-                        store.append(name, obsData[index], index=False, append=True, format='table', complevel=None)
-
-                        ## obsData[index].to_hdf(obsDataFilenameAll, key=name, mode='a', append=True, complevel=None)
+                    for index, name, df in enumerate(zip(names, obsData)):
+                        store.append(name, df, index=False, append=True, format='table', complevel=None)
 
                         ## Drop the whole rows once they're flushed to save memory, but keep the dataframe header so later
                         ## we can load them with new rows
@@ -338,6 +370,8 @@ class SourceCollector:
                     df_nObs = pd.DataFrame.from_dict({'sourceID': names,
                                                       'alpha': catalog.ra.value,
                                                       'delta': catalog.dec.value,
+                                                      'pm_ra': catalog.pm_ra_cosdec.value,
+                                                      'pm_dec': catalog.pm_dec.value,
                                                       'nObs': nObsData, 'nEpochs': nEpochs, 'dT': deltaT})
                     df_nObs.to_csv(nObsDataFilename, index=False)
 
@@ -356,13 +390,15 @@ class SourceCollector:
 
         return obsDataFilenameAll, nObsDataFilename
 
-    def calculateAstrometricSolutions(self, obsDataFilename, nObsDataFilename, c0, refPix_x=None, refPix_y=None,
-                                      maxNModel=2, nIter=20, minDT=0.0, minNEpoch=None, minNObs=None,
-                                      nSigmaThreshold=None, tRef=Time(2016.00, format='decimalyear', scale='tcb'),
-                                      outDir='./', imageDir=None, reOrientFrame=True, nPrint=10000,
-                                      acceptMaximalSolution=False):
-        properMotionFilename = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}.csv'.format(
-            outDir, tRef.tcb.decimalyear)
+    def calculateAstrometricSolutions(self, obsDataFilename, nObsDataFilename, refPix_x=None, refPix_y=None,
+                                      maxNModel=2, nIter=20, minNEpoch=None, minNObs=None, minDT=None,
+                                      nSigmaThreshold=None, tRef=None, outDir='./', imageDir=None, reOrientFrame=True,
+                                      nPrint=10000, acceptMaximalSolution=False):
+
+        if (tRef is not None):
+            self.tRef = deepcopy(tRef)
+
+        properMotionFilename = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}.csv'.format(outDir, self.tRef.tcb.jyear)
 
         if (not os.path.exists(properMotionFilename)):
             triu_indices = []
@@ -375,25 +411,28 @@ class SourceCollector:
 
             df_nObs[['nObs', 'nEpochs']].describe()
 
+            if (minDT is not None):
+                self.min_t_range = minDT
+
             if (minNEpoch is not None):
                 self.min_n_epoch = minNEpoch
 
-            selection = (df_nObs['nEpochs'] >= self.min_n_epoch) & (df_nObs['dT'] >= minDT)
+            selection = (df_nObs['nEpochs'] >= self.min_n_epoch) & (df_nObs['dT'] >= self.min_t_range)
 
             if (minNObs is not None):
                 self.min_n_obs = minNObs
 
-                selection = (df_nObs['nObs'] >= self.min_n_obs) & (df_nObs['dT'] >= minDT)
+                selection = (df_nObs['nObs'] >= self.min_n_obs) & (df_nObs['dT'] >= self.min_t_range)
 
             if (nSigmaThreshold is not None) and hasattr(nSigmaThreshold, '__iter__'):
                 self.n_sigma_threshold    = deepcopy(nSigmaThreshold)
                 self.n_sigma_threshold[0] = 0.0
 
+            if (tRef is not None):
+                self.tRef = deepcopy(tRef)
+
             print("SELECTED {0:d} SOURCES!".format(selection[selection].shape[0]))
             print("P_VALUE THRESHOLD FOR MODEL SELECTION:", self.n_sigma_threshold, "SIGMA")
-
-            ## Now we take the normal triad pqr_0 of the reference coordinate
-            pqr0 = coords.getNormalTriad(c0)
 
             columns = ['sourceID', 'tMin', 'tMax', 'nObs', 'nEpoch', 'meanMag', 'medianQ', 'bestModel', 'LR', 'pVal',
                        'nSigma', 'pMD', 'rms', 'nEff', 'xi0', 'eta0', 'pm_xi', 'pm_eta', 'parallax']
@@ -405,8 +444,6 @@ class SourceCollector:
                     columns.append('cov_{0:d}{1:d}'.format(i, j))
 
             storeIn = pd.HDFStore(obsDataFilename, 'r')
-
-            reg = LinearRegression(fit_intercept=False, copy_X=False)
 
             data = []
 
@@ -422,7 +459,7 @@ class SourceCollector:
 
                     xi  = (df['xi'] * df['vaFactor']).values
                     eta = (df['eta'] * df['vaFactor']).values
-                    t   = Time(df['time_ut1'].values, format='decimalyear', scale='ut1')
+                    t   = Time(df['time_tcb'].values, format='jyear', scale='tcb')
 
                     weights_init = np.repeat(df['weights'].values, 2)
 
@@ -454,10 +491,10 @@ class SourceCollector:
 
                         pv, tObs = astro.getHSTPosVelTime(sptFilenames, flcFilenames)
 
-                        X = astro.getAstrometricModels(tObs, tRef, maxNModel=maxNModel, pqr0=pqr0, pv=pv)
+                        X = astro.getAstrometricModels(tObs, self.tRef, maxNModel=maxNModel, pqr0=self.pqr0, pv=pv)
 
                     else:
-                        X = astro.getAstrometricModels(t, tRef, maxNModel=maxNModel, pqr0=pqr0)
+                        X = astro.getAstrometricModels(t, self.tRef, maxNModel=maxNModel, pqr0=self.pqr0)
 
                     y = np.zeros((2 * nObs, 1))
 
@@ -479,46 +516,9 @@ class SourceCollector:
                     rms = []
                     nEff = []
                     for model in range(maxNModel):
-                        weights = deepcopy(weights_init)
+                        astro_solution, weights, res = self._solveAstrometry(X[model], y, weights_init, nIter=nIter)
+
                         W = sparse.diags(weights)
-
-                        astro_solution = np.zeros(N_PARAMS[model])
-                        for iter in range(nIter):
-                            reg.fit(X[model], y, sample_weight=weights)
-
-                            astro_solution = reg.coef_[0]
-
-                            res = y - reg.predict(X[model])
-
-                            mse = (res.T @ W @ res)[0, 0] / np.sum(weights)
-
-                            '''
-                            if (np.sum(weights) <= 0.0):
-                                print(i, sourceID, refCatID, nEpochs, nObs, mse, model, iter, astro_solution)
-                                print(weights)
-                            ''';
-
-                            '''
-                            if (i == 59714):
-                                print(i, sourceID, refCatID, nEpochs, nObs, mse, model, iter, astro_solution)
-                                print(weights)
-                            ''';
-
-                            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res.reshape((-1, 2)), weights[::2])
-
-                            ## print(sourceID, mean, cov)
-
-                            z = stat.getMahalanobisDistances(res.reshape((-1, 2)), mean, np.linalg.inv(cov))
-
-                            '''
-                            if (np.nansum(stat.wdecay(z)) <= 0.0):
-                                break
-                            ''';
-
-                            ## We now use the z statistics to re-calculate the weights
-                            weights = np.repeat(stat.wdecay(z), 2)
-
-                            W = sparse.diags(weights)
 
                         solutions.append(astro_solution)
 
@@ -529,6 +529,8 @@ class SourceCollector:
                         H = X[model] @ XTWXInv @ X[model].T @ W
 
                         nuEff[model] = np.nansum(weights) - np.trace(H)
+
+                        mse = (res.T @ W @ res)[0, 0] / np.sum(weights)
 
                         covs.append(mse * XTWXInv)
 
@@ -589,8 +591,8 @@ class SourceCollector:
                     ## print("BEST_MODEL:", bestModel, nSigma[bestModel], pMD[bestModel], bestSolution)
                     ## print(bestSolution.shape, bestCov.shape)
 
-                    tMin = df['time_ut1'].min()
-                    tMax = df['time_ut1'].max()
+                    tMin = df['time_tcb'].min()
+                    tMax = df['time_tcb'].max()
 
                     df['flux'] = 10.00 ** (-0.4 * df['W'])
 
@@ -634,11 +636,11 @@ class SourceCollector:
         df_new['m']    = df_ppm['meanMag']
         df_new['x']    = df_ppm['xi0']
         df_new['y']    = df_ppm['eta0']
-        df_new['pm_x'] = df_ppm['pm_x']
-        df_new['pm_y'] = df_ppm['pm_y']
+        df_new['pm_x'] = df_ppm['pm_xi']
+        df_new['pm_y'] = df_ppm['pm_eta']
 
         propMotionFilenameGDR3 = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}_GDR3Corr.txt'.format(outDir,
-                                                                                          tRef.tcb.decimalyear)
+                                                                                          self.tRef.tcb.jyear)
 
         if reOrientFrame:
             if (not os.path.exists(propMotionFilenameGDR3)):
@@ -647,9 +649,7 @@ class SourceCollector:
                 Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
                 Gaia.ROW_LIMIT = -1
 
-                coord = SkyCoord(ra=c0.ra, dec=c0.dec, frame='icrs')
-
-                g = Gaia.query_object_async(coordinate=coord, width=WIDTH, height=HEIGHT)
+                g = Gaia.query_object_async(coordinate=self.c0, width=WIDTH, height=HEIGHT)
 
                 gaia_selection = (g['ruwe'] >= MIN_RUWE) & (g['ruwe'] <= MAX_RUWE)
 
@@ -665,7 +665,7 @@ class SourceCollector:
 
                 print("GETTING THE SHIFT AND ROTATION MATRIX...")
 
-                xi0_gdr3, eta0_gdr3 = coords.getNormalCoordinates(c_gdr3, coords.getNormalTriad(c0))
+                xi0_gdr3, eta0_gdr3 = coords.getNormalCoordinates(c_gdr3, coords.getNormalTriad(self.c0))
 
                 xi0_gdr3_pix  = (xi0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
                 eta0_gdr3_pix = (eta0_gdr3 / acsconstants.ACS_PLATESCALE).decompose().value
@@ -703,8 +703,7 @@ class SourceCollector:
                     xi0_pix  = (df_ppm['xi0'].values * u.pix * acsconstants.ACS_PLATESCALE).decompose()
                     eta0_pix = (df_ppm['eta0'].values * u.pix * acsconstants.ACS_PLATESCALE).decompose()
 
-                    idx, sep, _ = coords.getCelestialCoordinatesFromNormalCoordinates(xi0_pix, eta0_pix,
-                                                                                      c0).match_to_catalog_sky(c_gdr3)
+                    idx, sep, _ = coords.getCelestialCoordinatesFromNormalCoordinates(xi0_pix, eta0_pix, self.c0).match_to_catalog_sky(c_gdr3)
 
                     ## c_refCat.match_to_catalog_sky(c_gdr3)
 
@@ -730,20 +729,18 @@ class SourceCollector:
                 X, scaler       = sip.buildModel(xi0, eta0, 1)
                 XAll, scalerAll = sip.buildModel(df_ppm['xi0'], df_ppm['eta0'], 1)
 
-                reg = LinearRegression(fit_intercept=False)
-
                 for i in range(acsconstants.NAXIS):
                     if (i == 0):
                         y = xi0_gdr3
                     elif (i == 1):
                         y = eta0_gdr3
 
-                    reg.fit(X, y)
+                    self.reg.fit(X, y)
 
-                    print(reg.coef_)
+                    print(self.reg.coef_)
 
-                    new_coords = reg.predict(XAll)
-                    new_pm = df_ppm['pm_xi'] * reg.coef_[1] + df_ppm['pm_eta'] * reg.coef_[2]
+                    new_coords = self.reg.predict(XAll)
+                    new_pm = df_ppm['pm_xi'] * self.reg.coef_[1] + df_ppm['pm_eta'] * self.reg.coef_[2]
 
                     if ((refPix_x is not None) and (refPix_y is not None)):
                         ## Add 1 because in pixel space, coordinates starts from 1, NOT 0!
@@ -765,7 +762,7 @@ class SourceCollector:
 
         else:
             propMotionFilenameGDR3 = '{0:s}/PPMPLXCatalogue_tRef{1:0.1f}_noGDR3Corr.txt'.format(outDir,
-                                                                                                tRef.tcb.decimalyear)
+                                                                                                self.tRef.tcb.jyear)
         if (not os.path.exists(propMotionFilenameGDR3)):
             df_new.index += 1
 
@@ -773,25 +770,101 @@ class SourceCollector:
 
         return properMotionFilename, propMotionFilenameGDR3
 
-    def _generateNewCatalog(self, catalog, obsData, nObs, wcsRef, median=True):
-        alpha = catalog.ra.value
-        delta = catalog.dec.value
+    def _concatenateCatalogues(self, catalog1, catalog2):
+        ra     = np.hstack([catalog1.ra.deg, catalog2.ra.deg]) * u.deg
+        dec    = np.hstack([catalog1.dec.deg, catalog2.dec.deg]) * u.deg
+        pm_ra  = np.hstack([catalog1.pm_ra_cosdec.value, catalog2.pm_ra_cosdec.value]) * u.mas / u.yr
+        pm_dec = np.hstack([catalog1.pm_dec.value, catalog2.pm_dec.value]) * u.mas / u.yr
+        time   = np.hstack([catalog1.obstime.tcb.jyear, catalog2.obstime.tcb.jyear])
 
-        if median:
+        return SkyCoord(ra=ra, dec=dec, pm_ra_cosdec=pm_ra, pm_dec=pm_dec,
+                        obstime=Time(time, format='jyear', scale='tcb'), distance=1, frame='icrs')
+
+
+    def _getMedianMeasurements(self, df):
+        xi   = np.nanmedian((df['xi']  * df['vaFactor']).values)
+        eta  = np.nanmedian((df['eta'] * df['vaFactor']).values)
+        time = np.nanmedian(df['time_tcb'].values)
+
+        alpha, delta = self.wcsRef.wcs_pix2world(xi, eta, 1)
+
+        return alpha, delta, time
+
+    def _solveAstrometry(self, X, y, w, nIter=20):
+        astro_solution = np.zeros(X.shape[1])
+        res            = np.zeros(X.shape[0])
+        for iter in range(nIter):
+            self.reg.fit(X, y, sample_weight=w)
+
+            astro_solution = self.reg.coef_[0]
+
+            res = y - self.reg.predict(X)
+
+            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res.reshape((-1, 2)), w[::2])
+
+            z = stat.getMahalanobisDistances(res.reshape((-1, 2)), mean, np.linalg.inv(cov))
+
+            ## We now use the z statistics to re-calculate the weights
+            w = np.repeat(stat.wdecay(z), 2)
+
+        return astro_solution, w, res
+
+    def _generateNewCatalog(self, catalog, obsData, nObs, dt, calculate_proper_motion=True, median=True):
+        alpha  = catalog.ra.value
+        delta  = catalog.dec.value
+        pm_ra  = catalog.pm_ra_cosdec.value
+        pm_dec = catalog.pm_dec.value
+        time   = catalog.obstime.tcb.jyear
+
+        if calculate_proper_motion:
+            process1 = (nObs >= self.min_n_obs) & (dt >= self.min_t_range)
+            indices1 = np.argwhere(process1).flatten()
+
+            process2 = ~process1 & (nObs > 1)
+            indices2 = np.argwhere(process2).flatten()
+
+            for index in indices1:
+                xi  = (obsData[index]['xi'] * obsData[index]['vaFactor']).values
+                eta = (obsData[index]['eta'] * obsData[index]['vaFactor']).values
+                t   = Time(obsData[index]['time_tcb'].values, format='jyear', scale='tcb')
+
+                X = astro.getAstrometricModels(t, self.tRef, maxNModel=2, pqr0=self.pqr0)[1]
+                y = np.zeros((X.shape[0], 1))
+
+                y[0::2, 0] = xi
+                y[1::2, 0] = eta
+
+                w = np.repeat(obsData[index]['weights'].values, 2)
+
+                if 0.5 * np.nansum(w) < self.min_n_obs:
+                    w = np.ones_like(w)
+
+                astro_solution, _, _ = self._solveAstrometry(X, y, w, nIter=5)
+
+                alpha[index], delta[index]  = self.wcsRef.wcs_pix2world(astro_solution[0], astro_solution[1], 1)
+                pm_ra[index], pm_dec[index] = -astro_solution[2] * acsconstants.ACS_PLATESCALE.value, astro_solution[
+                    3] * acsconstants.ACS_PLATESCALE.value
+                time[index] = self.tRef.tcb.jyear
+
+            for index in indices2:
+                alpha[index], delta[index], time[index] = self._getMedianMeasurements(obsData[index])
+
+        elif median:
             for index in np.argwhere(nObs > 1).flatten():
-                xi  = np.nanmedian(obsData[index]['xi'].values  * obsData[index]['vaFactor'].values)
-                eta = np.nanmedian(obsData[index]['eta'].values * obsData[index]['vaFactor'].values)
+                alpha[index], delta[index], time[index] = self._getMedianMeasurements(obsData[index])
 
-                alpha[index], delta[index] = wcsRef.wcs_pix2world(xi, eta, 1)
         else:
             for index in np.argwhere(nObs > 1).flatten():
                 xi  = np.nanmean(obsData[index]['xi'].values  * obsData[index]['vaFactor'].values)
                 eta = np.nanmean(obsData[index]['eta'].values * obsData[index]['vaFactor'].values)
 
-                alpha[index], delta[index] = wcsRef.wcs_pix2world(xi, eta, 1)
+                alpha[index], delta[index] = self.wcsRef.wcs_pix2world(xi, eta, 1)
 
-        return SkyCoord(ra=alpha * u.deg, dec=delta * u.deg, distance=1, frame='icrs')
+                time[index] = np.nanmean(obsData[index]['time_tcb'])
 
+        return SkyCoord(ra=alpha * u.deg, dec=delta * u.deg, pm_ra_cosdec=pm_ra * u.mas / u.yr,
+                        pm_dec=pm_dec * u.mas / u.yr, obstime=Time(time, format='jyear', scale='tcb'), distance=1,
+                        frame='icrs')
 
 class CrossMatcher:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, max_sep=None):
@@ -821,7 +894,7 @@ class CrossMatcher:
                 tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
                 t_acs   = Time(tstring, scale='utc', format='fits')
 
-                dt = t_acs.decimalyear - self.tRef0.utc.value
+                dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
 
                 ## We use the observation time, in combination with the proper motions to move
                 ## the coordinates into the time
