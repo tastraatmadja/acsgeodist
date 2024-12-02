@@ -110,7 +110,7 @@ def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None, pv=None):
     eb = ebp.xyz.T.to(u.au) + pv[0].xyz.T.to(u.au)
 
     ## Proper motion time including Roemer's effect
-    dt = (t.tdb.decimalyear - t_ref + (eb.to_value(u.au) @ pqr0[2].reshape((3, -1))).flatten() * AULTY.value) * u.yr
+    dt = (t.tdb.decimalyear - t_ref.tdb.decimalyear + (eb.to_value(u.au) @ pqr0[2].reshape((3, -1))).flatten() * AULTY.value) * u.yr
 
     nData = 2 * t.size
 
