@@ -175,8 +175,7 @@ class SourceCollector:
         nRowsTotal   = 0
         thisFileDone = []
         iterate      = range(nFiles)
-        timeRange    = 0.0
-        prevTime     = 0.0
+        tMin, tMax   = +np.inf, -np.inf
         for i in iterate:
             startTime = time.time()
 
@@ -210,6 +209,12 @@ class SourceCollector:
                 if (not done):
                     print('.')
                     print("Processing {0:s}... ".format(rootname), end='')
+                    if (tObs.tcb.jyear < tMin):
+                        tMin = tObs.tcb.jyear
+                    if (tObs.tcb.jyear > tMax):
+                        tMax = tObs.tcb.jyear
+
+                    timeRange = tMax - tMin
 
                     df_resids = pd.read_csv(residsFile)
 
@@ -247,7 +252,6 @@ class SourceCollector:
                         nEpochs  = np.ones(len(sourceIDs), dtype=int).tolist()
                         deltaT   = np.zeros(len(sourceIDs), dtype=float).tolist()
                         epochIDs = np.full((len(sourceIDs), 1), epochID, dtype=int).tolist()
-                        prevTime = tObs.tcb.jyear
                     else:
                         catalog_obs = catalog.apply_space_motion(tObs)
 
@@ -314,19 +318,17 @@ class SourceCollector:
 
                     nRowsTotal += xi.size
 
-                    timeRange = tObs.tcb.jyear - prevTime
-
                     calculatePM = False
-                    if (timeRange > 1.0):
-                        prevTime = tObs.tcb.jyear
-
+                    if (timeRange > 2.0):
                         calculatePM = True
+                        tMin, tMax  = +np.inf, -np.inf
 
                     catalog = self._generateNewCatalog(catalog, obsData, np.array(nObsData), np.array(deltaT),
                                                        calculate_proper_motion=calculatePM)
 
-                    print(len(names), len(catalog), len(obsData), len(deltaT), nRowsTotal, "{0:0.3}".format(timeRange),
-                          end='')
+                    print(len(names), len(catalog), len(obsData), len(deltaT), nRowsTotal,
+                          "{0:0.6f}".format(timeRange), end='')
+
                     thisFileDone.append(rootname)
 
                     elapsedTime = time.time() - startTime
@@ -343,7 +345,9 @@ class SourceCollector:
 
                     startTimeFlush = time.time()
 
-                    print("NUMBER OF SOURCES SO FAR:", len(names))
+                    argsel = np.argwhere(np.array(nObsData) >= self.min_n_obs).flatten()
+
+                    print("NUMBER OF SOURCES SO FAR (SELECTED):", len(nEpochs), len(argsel))
 
                     mode = 'w'
 
@@ -352,8 +356,13 @@ class SourceCollector:
 
                     store = pd.HDFStore(obsDataFilenameAll, mode)
 
-                    for index, name, df in enumerate(zip(names, obsData)):
-                        store.append(name, df, index=False, append=True, format='table', complevel=None)
+                    ## selectionIndex = np.argwhere(np.array(nObsData) >= self.min_n_obs).flatten()
+                    ## for index, (name, df) in enumerate(zip(names, obsData)):
+
+                    for index in argsel:
+                        name = names[index]
+
+                        store.append(name, obsData[index], index=False, append=True, format='table', complevel=None)
 
                         ## Drop the whole rows once they're flushed to save memory, but keep the dataframe header so later
                         ## we can load them with new rows
@@ -372,6 +381,7 @@ class SourceCollector:
                                                       'delta': catalog.dec.value,
                                                       'pm_ra': catalog.pm_ra_cosdec.value,
                                                       'pm_dec': catalog.pm_dec.value,
+                                                      'epoch': catalog.obstime.tcb.jyear,
                                                       'nObs': nObsData, 'nEpochs': nEpochs, 'dT': deltaT})
                     df_nObs.to_csv(nObsDataFilename, index=False)
 
@@ -465,17 +475,6 @@ class SourceCollector:
 
                     if (0.5 * np.nansum(weights_init) < MIN_N_OBS):
                         weights_init = np.repeat(np.ones_like(xi), 2)
-
-                    '''
-                    if (np.sum(weights) <= 0.0):
-                        print(i, sourceID, refCatID, nEpochs, nObs)
-                    ''';
-
-                    '''
-                    if (i == 59714):
-                        print(df['weights'])
-                        print(weights_init)
-                    ''';
 
                     nObs = t.size
 
@@ -814,6 +813,7 @@ class SourceCollector:
         delta  = catalog.dec.value
         pm_ra  = catalog.pm_ra_cosdec.value
         pm_dec = catalog.pm_dec.value
+        pm     = np.sqrt(pm_ra ** 2 + pm_dec ** 2)
         time   = catalog.obstime.tcb.jyear
 
         if calculate_proper_motion:
@@ -848,18 +848,15 @@ class SourceCollector:
 
             for index in indices2:
                 alpha[index], delta[index], time[index] = self._getMedianMeasurements(obsData[index])
-
         elif median:
-            for index in np.argwhere(nObs > 1).flatten():
+            for index in np.argwhere((nObs > 1) & (pm <= 0)).flatten():
                 alpha[index], delta[index], time[index] = self._getMedianMeasurements(obsData[index])
-
         else:
-            for index in np.argwhere(nObs > 1).flatten():
+            for index in np.argwhere((nObs > 1) & (pm <= 0)).flatten():
                 xi  = np.nanmean(obsData[index]['xi'].values  * obsData[index]['vaFactor'].values)
                 eta = np.nanmean(obsData[index]['eta'].values * obsData[index]['vaFactor'].values)
 
                 alpha[index], delta[index] = self.wcsRef.wcs_pix2world(xi, eta, 1)
-
                 time[index] = np.nanmean(obsData[index]['time_tcb'])
 
         return SkyCoord(ra=alpha * u.deg, dec=delta * u.deg, pm_ra_cosdec=pm_ra * u.mas / u.yr,
