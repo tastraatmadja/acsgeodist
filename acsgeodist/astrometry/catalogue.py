@@ -783,11 +783,10 @@ class SourceCollector:
     def _getMedianMeasurements(self, df):
         xi   = np.nanmedian((df['xi']  * df['vaFactor']).values)
         eta  = np.nanmedian((df['eta'] * df['vaFactor']).values)
-        time = np.nanmedian(df['time_tcb'].values)
 
         alpha, delta = self.wcsRef.wcs_pix2world(xi, eta, 1)
 
-        return alpha, delta, time
+        return alpha, delta, df['time_tcb'].median()
 
     def _solveAstrometry(self, X, y, w, nIter=20):
         astro_solution = np.zeros(X.shape[1])
@@ -828,7 +827,9 @@ class SourceCollector:
                 eta = (obsData[index]['eta'] * obsData[index]['vaFactor']).values
                 t   = Time(obsData[index]['time_tcb'].values, format='jyear', scale='tcb')
 
-                X = astro.getAstrometricModels(t, self.tRef, maxNModel=2, pqr0=self.pqr0)[1]
+                thisTRef = obsData[index]['time_tcb'].median()
+
+                X = astro.getAstrometricModels(t, thisTRef, maxNModel=2, pqr0=self.pqr0)[1]
                 y = np.zeros((X.shape[0], 1))
 
                 y[0::2, 0] = xi
@@ -844,7 +845,7 @@ class SourceCollector:
                 alpha[index], delta[index]  = self.wcsRef.wcs_pix2world(astro_solution[0], astro_solution[1], 1)
                 pm_ra[index], pm_dec[index] = -astro_solution[2] * acsconstants.ACS_PLATESCALE.value, astro_solution[
                     3] * acsconstants.ACS_PLATESCALE.value
-                time[index] = self.tRef.tcb.jyear
+                time[index] = thisTRef.tcb.jyear
 
             for index in indices2:
                 alpha[index], delta[index], time[index] = self._getMedianMeasurements(obsData[index])
