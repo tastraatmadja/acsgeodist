@@ -5,8 +5,9 @@ from astropy.time import Time, TimeDelta
 from calcos import orbit
 import healpy as hp
 import numpy as np
+from sklearn.linear_model import LinearRegression
 
-from acsgeodist.tools import coords
+from acsgeodist.tools import coords, stat
 
 ## Astronomical unit (m) IAU 2012
 DAU = 149597870.7e3 * u.m
@@ -33,6 +34,8 @@ HP_NESTED     = True
 N_PARAMS = np.array([2, 4, 5])
 
 NAXIS = 2
+
+REG = LinearRegression(fit_intercept=False, copy_X=False)
 
 '''
 Given a SkyCoord object c, return the source ID of an ACS source using healpix, assuming that the healpix resolution is
@@ -129,3 +132,22 @@ def getAstrometricModels(t, t_ref, maxNModel=3, pqr0=None, site=None, pv=None):
                     X[model][axis::2, 4] = -(eb.to_value(u.au) @ pqr0[axis].reshape((3,-1))).flatten()
 
     return X
+
+def solveAstrometry(X, y, w, nIter=20):
+    astro_solution = np.zeros(X.shape[1])
+    res            = np.zeros(X.shape[0])
+    for iter in range(nIter):
+        REG.fit(X, y, sample_weight=w)
+
+        astro_solution = REG.coef_[0]
+
+        res = y - REG.predict(X)
+
+        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res.reshape((-1, 2)), w[::2])
+
+        z = stat.getMahalanobisDistances(res.reshape((-1, 2)), mean, np.linalg.inv(cov))
+
+        ## We now use the z statistics to re-calculate the weights
+        w = np.repeat(stat.wdecay(z), 2)
+
+    return astro_solution, w, res

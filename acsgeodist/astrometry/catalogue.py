@@ -325,6 +325,7 @@ class SourceCollector:
 
                     catalog = self._generateNewCatalog(catalog, obsData, np.array(nObsData), np.array(deltaT),
                                                        calculate_proper_motion=calculatePM)
+                    names   = astro.generateSourceID(catalog)
 
                     print(len(names), len(catalog), len(obsData), len(deltaT), nRowsTotal,
                           "{0:0.6f}".format(timeRange), end='')
@@ -515,7 +516,7 @@ class SourceCollector:
                     rms = []
                     nEff = []
                     for model in range(maxNModel):
-                        astro_solution, weights, res = self._solveAstrometry(X[model], y, weights_init, nIter=nIter)
+                        astro_solution, weights, res = astro.solveAstrometry(X[model], y, weights_init, nIter=nIter)
 
                         W = sparse.diags(weights)
 
@@ -788,25 +789,6 @@ class SourceCollector:
 
         return alpha, delta, df['time_tcb'].median()
 
-    def _solveAstrometry(self, X, y, w, nIter=20):
-        astro_solution = np.zeros(X.shape[1])
-        res            = np.zeros(X.shape[0])
-        for iter in range(nIter):
-            self.reg.fit(X, y, sample_weight=w)
-
-            astro_solution = self.reg.coef_[0]
-
-            res = y - self.reg.predict(X)
-
-            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res.reshape((-1, 2)), w[::2])
-
-            z = stat.getMahalanobisDistances(res.reshape((-1, 2)), mean, np.linalg.inv(cov))
-
-            ## We now use the z statistics to re-calculate the weights
-            w = np.repeat(stat.wdecay(z), 2)
-
-        return astro_solution, w, res
-
     def _generateNewCatalog(self, catalog, obsData, nObs, dt, calculate_proper_motion=True, median=True):
         alpha  = catalog.ra.value
         delta  = catalog.dec.value
@@ -827,7 +809,7 @@ class SourceCollector:
                 eta = (obsData[index]['eta'] * obsData[index]['vaFactor']).values
                 t   = Time(obsData[index]['time_tcb'].values, format='jyear', scale='tcb')
 
-                thisTRef = obsData[index]['time_tcb'].median()
+                thisTRef = Time(obsData[index]['time_tcb'].median(), format='jyear', scale='tcb')
 
                 X = astro.getAstrometricModels(t, thisTRef, maxNModel=2, pqr0=self.pqr0)[1]
                 y = np.zeros((X.shape[0], 1))
@@ -840,7 +822,7 @@ class SourceCollector:
                 if 0.5 * np.nansum(w) < self.min_n_obs:
                     w = np.ones_like(w)
 
-                astro_solution, _, _ = self._solveAstrometry(X, y, w, nIter=5)
+                astro_solution, _, _ = astro.solveAstrometry(X, y, w, nIter=5)
 
                 alpha[index], delta[index]  = self.wcsRef.wcs_pix2world(astro_solution[0], astro_solution[1], 1)
                 pm_ra[index], pm_dec[index] = -astro_solution[2] * acsconstants.ACS_PLATESCALE.value, astro_solution[
