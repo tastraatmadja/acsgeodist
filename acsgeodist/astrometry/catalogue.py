@@ -281,7 +281,7 @@ class SourceCollector:
                                 deltaT[matchIdx] = (obsData[matchIdx]['time_tcb'].max() -
                                                     obsData[matchIdx]['time_tcb'].min())
 
-                                nObsData[matchIdx] += 1
+                                nObsData[matchIdx] = len(obsData[matchIdx])
 
                                 ## Extend the list here so as not introduce a NoneType later
                                 epochIDs[matchIdx].extend(obsData[matchIdx].epochID.unique())
