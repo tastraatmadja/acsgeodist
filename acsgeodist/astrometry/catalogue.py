@@ -292,8 +292,8 @@ class SourceCollector:
 
                             ## Otherwise this is a new observation and create a new entry for this observation
                             else:
-                                names.append(sourceIDs[ii])  ## Append the source Id to the list of names
-                                obsData.append(row)  ## Append the row to list of dataframe
+                                names.append(sourceIDs[ii]) ## Append the source Id to the list of names
+                                obsData.append(row)         ## Append the row to list of dataframe
                                 nObsData.append(1)
                                 nEpochs.append(1)
                                 epochIDs.append([epochID])
@@ -363,7 +363,10 @@ class SourceCollector:
                     for index in argsel:
                         name = names[index]
 
-                        store.append(name, obsData[index], index=False, append=True, format='table', complevel=None)
+                        ## Don't use name for now because there might be duplicate sources sharing the same name.
+                        ## Use their indices for now.
+                        ## TODO: Figure out a way to solve it.
+                        store.append('{0:d}'.format(index), obsData[index], index=False, append=True, format='table', complevel=None)
 
                         ## Drop the whole rows once they're flushed to save memory, but keep the dataframe header so later
                         ## we can load them with new rows
