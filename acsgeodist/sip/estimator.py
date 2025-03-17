@@ -944,13 +944,13 @@ class SIPEstimator:
         hduList.close()
 
         gc.set_threshold(2, 1, 1)
-        print('Thresholds:', gc.get_threshold())
-        print('Counts:', gc.get_count())
+        ## print('Thresholds:', gc.get_threshold())
+        ## print('Counts:', gc.get_count())
 
         del hduList
         del hst1pass
         gc.collect()
-        print('Counts:', gc.get_count())
+        ## print('Counts:', gc.get_count())
 
         return textResults
 
@@ -1135,6 +1135,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             XAll_A.append([])
             XAll_B.append([])
 
+        print("READING FILES...")
         selectedHST1PassFiles = []
         selectedImageFiles    = []
         for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
@@ -1159,9 +1160,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 if ((t_acs.decimalyear >= self.tMin) and (t_acs.decimalyear <= self.tMax)  and (tExp > self.min_t_exp)
                         and (posTargResultant <= self.max_pos_targs)):
+                    '''
                     print()
                     print(i, os.path.basename(hst1passFile), os.path.basename(addendumFilename), baseImageFilename,
                           rootName)
+                    ''';
 
                     pa_v3 = float(hduList[0].header['PA_V3'])
 
@@ -1194,19 +1197,22 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         if (nDataBad[jjj] > self.min_n_refstar):
                             okays[jjj] = True
 
+                        '''
                         print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]),
                               "N_STARS =", nDataBad[jjj], "OKAY:", okays[jjj])
+                        ''';
 
                     del selection
                     gc.collect()
 
                     okayToProceed = np.prod(okays, dtype='bool')
 
-                    print("OKAY TO PROCEED:", okayToProceed)
+                    ## print("OKAY TO PROCEED:", okayToProceed)
 
                     Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
 
                     if okayToProceed:
+                        print(rootName, end=' ')
                         selectedHST1PassFiles.append(hst1passFile)
                         selectedImageFiles.append(imageFilename)
 
@@ -1248,7 +1254,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             nData = len(refStarIdx)
 
-                            print("CHIP:", chipTitle, "N_STARS:", nData)
+                            ## print("CHIP:", chipTitle, "N_STARS:", nData)
 
                             nDataAll[jjj] += nData
 
@@ -1324,17 +1330,18 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     hduList.close()
 
                     gc.set_threshold(2, 1, 1)
-                    print('Thresholds:', gc.get_threshold())
-                    print('Counts:', gc.get_count())
+                    ## print('Thresholds:', gc.get_threshold())
+                    ## print('Counts:', gc.get_count())
 
                     del hduList
                     del hst1pass
                     gc.collect()
-                    print('Counts:', gc.get_count())
+                    ## print('Counts:', gc.get_count())
                 else:
                     del hduList
                     gc.collect()
 
+        print()
         print("NUMBER OF SELECTED FILES:", nOkay)
 
         okayIDs = np.array(okayIDs)

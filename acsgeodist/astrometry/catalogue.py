@@ -82,55 +82,66 @@ class SourceCollector:
         if not os.path.exists(outDir):
             os.makedirs(outDir)
 
+        timeBinFilename = '{0:s}/time_bins.csv'.format(outDir)
+
         df_fitResults = reader.readFitResults(fitSummaryTableFilenames, pOrder)
 
-        df_fitResults['i']   = [rootname.replace('_flc', '')[0] for rootname in df_fitResults['rootname']]
-        df_fitResults['ppp'] = [rootname.replace('_flc', '')[1:4] for rootname in df_fitResults['rootname']]
-        df_fitResults['ss']  = [rootname.replace('_flc', '')[4:6] for rootname in df_fitResults['rootname']]
-        df_fitResults['oo']  = [rootname.replace('_flc', '')[6:8] for rootname in df_fitResults['rootname']]
-        df_fitResults['t']   = [rootname.replace('_flc', '')[8] for rootname in df_fitResults['rootname']]
+        if (not os.path.exists(timeBinFilename)):
+            df_fitResults['i']   = [rootname.replace('_flc', '')[0] for rootname in df_fitResults['rootname']]
+            df_fitResults['ppp'] = [rootname.replace('_flc', '')[1:4] for rootname in df_fitResults['rootname']]
+            df_fitResults['ss']  = [rootname.replace('_flc', '')[4:6] for rootname in df_fitResults['rootname']]
+            df_fitResults['oo']  = [rootname.replace('_flc', '')[6:8] for rootname in df_fitResults['rootname']]
+            df_fitResults['t']   = [rootname.replace('_flc', '')[8] for rootname in df_fitResults['rootname']]
 
-        tBins = []
-        tMins = []
-        tMaxs = []
+            tBins = []
+            tMins = []
+            tMaxs = []
 
-        nImages = 0
-        for ppp in df_fitResults.loc[df_fitResults['chip'] == 1, ['ppp']].value_counts().sort_index().index:
-            ppp = ppp[0]
+            nImages = 0
+            for ppp in df_fitResults.loc[df_fitResults['chip'] == 1, ['ppp']].value_counts().sort_index().index:
+                ppp = ppp[0]
 
-            for ss in df_fitResults.loc[
-                (df_fitResults['chip'] == 1) & (df_fitResults['ppp'] == ppp), ['ss']].value_counts().sort_index().index:
-                ss = ss[0]
+                for ss in df_fitResults.loc[
+                    (df_fitResults['chip'] == 1) & (df_fitResults['ppp'] == ppp), ['ss']].value_counts().sort_index().index:
+                    ss = ss[0]
 
-                selected_time = df_fitResults.loc[
-                    (df_fitResults['chip'] == 1) & (df_fitResults['ppp'] == ppp) & (df_fitResults['ss'] == ss), ['time']]
+                    selected_time = df_fitResults.loc[
+                        (df_fitResults['chip'] == 1) & (df_fitResults['ppp'] == ppp) & (df_fitResults['ss'] == ss), ['time']]
 
-                tMin = selected_time.min().values[0]
-                tMax = selected_time.max().values[0]
-                dt = (tMax - tMin) * 365.25 * 24 * u.hour
+                    tMin = selected_time.min().values[0]
+                    tMax = selected_time.max().values[0]
+                    dt = (tMax - tMin) * 365.25 * 24 * u.hour
 
-                tMins.append(tMin)
-                tMaxs.append(tMax)
+                    tMins.append(tMin)
+                    tMaxs.append(tMax)
 
-                nImages += selected_time.size
+                    nImages += selected_time.size
 
-                print(ppp, ss, selected_time.size, selected_time.min().values, selected_time.max().values, dt)
-            print()
+                    print(ppp, ss, selected_time.size, selected_time.min().values, selected_time.max().values, dt)
+                print()
 
-        tMins = np.sort(np.array(tMins))
-        tMaxs = np.sort(np.array(tMaxs))
+            tMins = np.sort(np.array(tMins))
+            tMaxs = np.sort(np.array(tMaxs))
 
-        tBins = np.hstack([tMins, tMaxs[-1] + 1.0 / 365.25])
+            tBins = np.hstack([tMins, tMaxs[-1] + 1.0 / 365.25])
 
-        print("TOTAL_NUMBER_OF_IMAGES:", nImages)
-        print("NUMBER_OF_TIME_BINS:", tBins.size)
+            print("TOTAL_NUMBER_OF_IMAGES:", nImages)
+            print("NUMBER_OF_TIME_BINS:", tBins.size)
+
+            df_timeBins = pd.DataFrame(
+                data={'epochID': np.arange(0, tBins.size - 1, dtype=int), 'tMin': tBins[0:-1], 'tMax': tBins[1:]})
+
+            df_timeBins.to_csv('{0:s}/time_bins.csv'.format(outDir))
+        else:
+            df_timeBins = pd.read_csv(timeBinFilename)
+
+            tMins = df_timeBins['tMin'].values
+            tMaxs = df_timeBins['tMax'].values[-1]
+
+            tBins = np.hstack([tMins, tMaxs + 1.0 / 365.25])
 
         df_fitResults['epochID'] = np.digitize(df_fitResults['time'].values, tBins, right=False) - 1
 
-        df_timeBins = pd.DataFrame(
-            data={'epochID': np.arange(0, tBins.size - 1, dtype=int), 'tMin': tBins[0:-1], 'tMax': tBins[1:]})
-
-        df_timeBins.to_csv('{0:s}/time_bins.csv'.format(outDir))
 
         nFiles = len(residsFilenames)
 
@@ -459,13 +470,20 @@ class SourceCollector:
 
             storeIn = pd.HDFStore(obsDataFilename, 'r')
 
+            selectionIndices = np.argwhere(selection[selection])
+
             data = []
 
             startTimeAll = time.time()
 
-            for i, sourceID in enumerate(df_nObs[selection]['sourceID'].values):
-                if (sourceID in storeIn):
-                    df = storeIn[sourceID]
+            ## for i, sourceID in enumerate(df_nObs[selection]['sourceID'].values):
+            ##     if (sourceID in storeIn):
+            for i, index in enumerate(selectionIndices.flatten()):
+                indexText = '{0:d}'.format(index)
+                if (indexText in storeIn):
+                    df = storeIn[indexText]
+
+                    sourceID = df_nObs.iloc[index]['sourceID']
 
                     refCatID = df['refCatID'].iloc[0]
 
@@ -476,6 +494,8 @@ class SourceCollector:
                     t   = Time(df['time_tcb'].values, format='jyear', scale='tcb')
 
                     weights_init = np.repeat(df['weights'].values, 2)
+
+                    weights_init[np.isnan(weights_init)] = 0.0
 
                     if (0.5 * np.nansum(weights_init) < MIN_N_OBS):
                         weights_init = np.repeat(np.ones_like(xi), 2)
@@ -992,12 +1012,12 @@ class CrossMatcher:
             nAppearances[refCatIndices] += 1
 
             gc.set_threshold(2, 1, 1)
-            print('Thresholds:', gc.get_threshold())
-            print('Counts:', gc.get_count())
+            ## print('Thresholds:', gc.get_threshold())
+            ## print('Counts:', gc.get_count())
 
             del df_hst1pass
             gc.collect()
-            print('Counts:', gc.get_count())
+            ## print('Counts:', gc.get_count())
 
         print("ALL DONE!")
 

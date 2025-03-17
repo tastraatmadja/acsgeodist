@@ -143,11 +143,15 @@ def solveAstrometry(X, y, w, nIter=20):
 
         res = y - REG.predict(X)
 
-        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res.reshape((-1, 2)), w[::2])
+        try:
+            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(res.reshape((-1, 2)), w[::2])
 
-        z = stat.getMahalanobisDistances(res.reshape((-1, 2)), mean, np.linalg.inv(cov))
+            z = stat.getMahalanobisDistances(res.reshape((-1, 2)), mean, np.linalg.inv(cov))
 
-        ## We now use the z statistics to re-calculate the weights
-        w = np.repeat(stat.wdecay(z), 2)
+            ## We now use the z statistics to re-calculate the weights
+            w = np.repeat(stat.wdecay(z), 2)
+        except np.linalg.LinAlgError:
+            print("LINEAR ALGEBRA ERROR: SINGULAR MATRIX")
+            break
 
     return astro_solution, w, res
