@@ -115,7 +115,10 @@ class SIPEstimator:
                               pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
                               obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
 
-    def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, outDir='.', **kwargs):
+    def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, outDir='.', YZP=None, **kwargs):
+        if isinstance(YZP, np.ndarray):
+            Y0 = deepcopy(YZP)
+
         addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
 
         baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
