@@ -68,7 +68,9 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 
 class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
-                 min_n_refstar=100, make_lithographic_and_filter_mask_corrections=True, cross_match=True):
+                 min_n_refstar=100, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
+                 cross_match=True):
+        self.individualZP  = individualZP
         self.refCat        = deepcopy(referenceCatalog)
         self.wcsRef        = deepcopy(referenceWCS)
         self.tRef0         = deepcopy(tRef0)
@@ -115,10 +117,10 @@ class SIPEstimator:
                               pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
                               obstime=Time(g['ref_epoch'].value, format='jyear', scale='tcb'))
 
-    def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, outDir='.', YZP=None, **kwargs):
-        if isinstance(YZP, np.ndarray):
-            Y0 = deepcopy(YZP)
+        if (not self.individualZP):
+            print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
 
+    def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, outDir='.', **kwargs):
         addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
 
         baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
@@ -210,6 +212,9 @@ class SIPEstimator:
                 hst1pass['alpha']    = np.nan
                 hst1pass['delta']    = np.nan
                 hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
+
+                if not self.individualZP:
+                    dxs, dys, rolls = [], [], []
 
                 textResults = ""
                 for chip in chips:
@@ -315,15 +320,20 @@ class SIPEstimator:
 
                     ## Because we want to have individual zero points for each chip we
                     ## initialize the container for shifts and rolls here
-                    dxs, dys, rolls = [], [], []
+                    if self.individualZP:
+                        dxs, dys, rolls = [], [], []
 
                     nIterTotal = 0
                     for iteration in range(N_ITER_OUTER):
-                        dxs.append(sx)
-                        dys.append(sy)
-                        rolls.append(roll)
+                        if (self.individualZP or (chip == 1)):
+                            dxs.append(sx)
+                            dys.append(sy)
+                            rolls.append(roll)
 
-                        xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
+                            xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
+                        else:
+                            for (sx, sy, roll) in zip(dxs, dys, rolls):
+                                xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
 
                         for iteration2 in range(N_ITER_INNER):
                             nIterTotal += 1
@@ -555,6 +565,9 @@ class SIPEstimator:
                                 xyRaw = xyRaw[~rejected]
 
                                 indices = indices[~rejected]
+
+                        if (not (self.individualZP or (chip == 1))):
+                            break
 
                     ## print("SHIFTS_X:", dxs)
                     ## print("SHIFTS_Y:", dys)
