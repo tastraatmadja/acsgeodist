@@ -547,17 +547,25 @@ class SourceCollector:
 
                         XTWX = X[model].T @ W @ X[model]
 
-                        XTWXInv =  linalg.inv(XTWX)
+                        try:
+                            XTWXInv =  linalg.inv(XTWX)
 
-                        H = X[model] @ XTWXInv @ X[model].T @ W
+                            H = X[model] @ XTWXInv @ X[model].T @ W
 
-                        nuEff[model] = np.nansum(weights) - np.trace(H)
+                            nuEff[model] = np.nansum(weights) - np.trace(H)
 
-                        mse = (res.T @ W @ res)[0, 0] / np.sum(weights)
+                            mse = (res.T @ W @ res)[0, 0] / np.sum(weights)
 
-                        covs.append(mse * XTWXInv)
+                            covs.append(mse * XTWXInv)
 
-                        rms.append(np.sqrt(mse))
+                            rms.append(np.sqrt(mse))
+                        except np.linalg.LinAlgError:
+                            print("LINEAR ALGEBRA ERROR: SINGULAR MATRIX")
+
+                            nuEff[model] = np.nansum(weights) - X[model].shape[1]
+
+                            covs.append(np.diag(np.full(X[model].shape[1], np.inf)))
+                            rms.append(np.inf)
 
                         nEff.append(0.5 * np.nansum(weights))
 
