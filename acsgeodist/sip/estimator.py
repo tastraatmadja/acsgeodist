@@ -14,6 +14,7 @@ import gc
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
+import multiprocessing as mp
 import numpy as np
 import os
 from photutils.aperture import CircularAperture
@@ -318,8 +319,8 @@ class SIPEstimator:
 
                     previousWeightSum = np.sum(weights)
 
-                    ## Because we want to have individual zero points for each chip we
-                    ## initialize the container for shifts and rolls here
+                    ## IF we want to have individual zero points for each chip we initialize the container for shifts
+                    ## and rolls here
                     if self.individualZP:
                         dxs, dys, rolls = [], [], []
 
@@ -1009,11 +1010,11 @@ class SIPEstimator:
 class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
                  qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0, max_pos_targs=0.0,
-                 make_lithographic_and_filter_mask_corrections=True, cross_match=True):
+                 individualZP=True, make_lithographic_and_filter_mask_corrections=True, cross_match=True):
         super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
                        min_n_refstar=min_n_refstar,
                        make_lithographic_and_filter_mask_corrections=make_lithographic_and_filter_mask_corrections,
-                       cross_match=cross_match)
+                       cross_match=cross_match, individualZP=individualZP)
         self.pOrderIndiv = pOrderIndiv ## Maximum polynomial order that are inferred individually for each image
         self.pOrder      = pOrder      ## Total polynomial orders, including those with time-dependent model
         self.kOrder      = kOrder      ## B-spline order
@@ -1082,324 +1083,140 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.max_pos_targs = max_pos_targs
 
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', makePlots=True,
-                                                 saveIntermediateResults=True, **kwargs):
-        nOkay    = 0
-        nDataAll = np.zeros(2, dtype=int)
+                                                 saveIntermediateResults=True, nCPUs=None, **kwargs):
+        self.nOkay    = 0
+        self.nDataAll = np.zeros(2, dtype=int)
 
-        okayIDs = []
+        self.okayIDs = []
 
-        plateIDAll = []
-        indicesAll = []
+        self.plateIDAll = []
+        self.indicesAll = []
 
-        tAll = []
+        self.tAll = []
 
-        rootnamesAll = []
+        self.rootnamesAll = []
 
-        xiAll = []
-        etaAll = []
+        self.xiAll = []
+        self.etaAll = []
 
-        XpAll_A  = []
-        XkpAll_A = []
+        self.XpAll_A  = []
+        self.XkpAll_A = []
 
-        XpAll_B  = []
-        XkpAll_B = []
+        self.XpAll_B  = []
+        self.XkpAll_B = []
 
-        xyRawAll = []
+        self.xyRawAll = []
 
-        dxAll = []
-        dyAll = []
-        rollAll = []
+        self.dxAll = []
+        self.dyAll = []
+        self.rollAll = []
 
-        nDataImages = []
+        self.nDataImages = []
 
-        XtAll = []
-        tObs  = []
+        self.XtAll = []
+        self.tObs  = []
 
         XAll_A = []
         XAll_B = []
 
-        matchResAll = []
+        self.matchResAll = []
 
         startTime = time.time()
 
         for chip in chips:
             jjj = chip - 1
 
-            plateIDAll.append([])
-            indicesAll.append([])
-            tAll.append([])
-            rootnamesAll.append([])
+            self.plateIDAll.append([])
+            self.indicesAll.append([])
+            self.tAll.append([])
+            self.rootnamesAll.append([])
 
-            xiAll.append([])
-            etaAll.append([])
+            self.xiAll.append([])
+            self.etaAll.append([])
 
-            XpAll_A.append([])
-            XkpAll_A.append([])
-            XpAll_B.append([])
-            XkpAll_B.append([])
+            self.XpAll_A.append([])
+            self.XkpAll_A.append([])
+            self.XpAll_B.append([])
+            self.XkpAll_B.append([])
 
-            xyRawAll.append([])
+            self.xyRawAll.append([])
 
-            dxAll.append([])
-            dyAll.append([])
-            rollAll.append([])
+            self.dxAll.append([])
+            self.dyAll.append([])
+            self.rollAll.append([])
 
-            nDataImages.append([])
+            self.nDataImages.append([])
 
-            matchResAll.append([])
+            self.matchResAll.append([])
 
             XAll_A.append([])
             XAll_B.append([])
 
         print("READING FILES...")
-        selectedHST1PassFiles = []
-        selectedImageFiles    = []
-        for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
-            addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+        self.scalerArray           = np.ones(self.nParsSIP)
+        self.selectedHST1PassFiles = []
+        self.selectedImageFiles    = []
+        if (nCPUs is not None):
+            argumentList = [(i, hst1passFile, imageFilename) for i, (hst1passFile, imageFilename) in
+                            enumerate(zip(hst1passFiles, imageFilenames))]
 
-            baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
+            nJobs = len(argumentList)
 
-            rootName = baseImageFilename.split('_')[0]
+            print("NUMBER OF CPUS:", nCPUs)
+            print("NUMBER OF JOBS:", nJobs)
 
-            if (os.path.exists(imageFilename)) and (os.path.exists(addendumFilename)):
-                hduList = fits.open(imageFilename)
+            pool = mp.Pool(min(nCPUs, nJobs))
 
-                tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
-                t_acs = Time(tstring, scale='utc', format='fits')
+            pool.starmap_async(self._processFile, argumentList)
 
-                tExp = float(hduList[0].header['EXPTIME'])
+            pool.close()
 
-                posTarg1 = float(hduList[0].header['POSTARG1'])
-                posTarg2 = float(hduList[0].header['POSTARG2'])
-
-                posTargResultant = np.sqrt(posTarg1 ** 2 + posTarg2 ** 2)
-
-                if ((t_acs.decimalyear >= self.tMin) and (t_acs.decimalyear <= self.tMax)  and (tExp > self.min_t_exp)
-                        and (posTargResultant <= self.max_pos_targs)):
-                    '''
-                    print()
-                    print(i, os.path.basename(hst1passFile), os.path.basename(addendumFilename), baseImageFilename,
-                          rootName)
-                    ''';
-
-                    pa_v3 = float(hduList[0].header['PA_V3'])
-
-                    dt = t_acs.decimalyear - self.tRef0.utc.value
-
-                    ## We use the observation time, in combination with the proper motions to move
-                    ## the coordinates into the time
-                    self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
-                    self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
-
-                    hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
-
-                    delX = hst1pass['xPred'] - hst1pass['xRef']
-                    delY = hst1pass['yPred'] - hst1pass['yRef']
-
-                    matchRes = np.sqrt(delX ** 2 + delY ** 2)
-
-                    okays = np.zeros(chips.size, dtype='bool')
-                    nDataBad = np.zeros(chips.size, dtype=int)
-                    for chip in chips:
-                        jjj = chip - 1
-
-                        selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
-                                    hst1pass['q'] <= Q_MAX) & (~np.isnan(hst1pass['nAppearances'])) & (
-                                                hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
-                                                matchRes <= self.max_pix_tol)
-
-                        nDataBad[jjj] = len(hst1pass[selection])
-
-                        if (nDataBad[jjj] > self.min_n_refstar):
-                            okays[jjj] = True
-
-                        '''
-                        print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]),
-                              "N_STARS =", nDataBad[jjj], "OKAY:", okays[jjj])
-                        ''';
-
-                    del selection
-                    gc.collect()
-
-                    okayToProceed = np.prod(okays, dtype='bool')
-
-                    ## print("OKAY TO PROCEED:", okayToProceed)
-
-                    Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
-
-                    if okayToProceed:
-                        print(rootName, end=' ')
-                        selectedHST1PassFiles.append(hst1passFile)
-                        selectedImageFiles.append(imageFilename)
-
-                        nOkay += 1
-
-                        okayIDs.append(i)
-
-                        XtAll.append(Xt)
-                        tObs.append(t_acs.decimalyear)
-
-                        for chip in chips:
-                            jj = 2 - chip
-                            jjj = chip - 1
-
-                            chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1],
-                                                                acsconstants.CHIP_POSITIONS[chip - 1])
-
-                            hdu = hduList['SCI', chip]
-
-                            ## Zero point of the y coordinates.
-                            if (chip == 1):
-                                yzp = 0.0
-                                naxis2 = int(hdu.header['NAXIS2'])
-                            else:
-                                yzp += float(naxis2)
-
-                                naxis2 = int(hdu.header['NAXIS2'])
-
-                            orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
-                            vaFactor = float(hdu.header['VAFACTOR'])
-
-                            selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (
-                                        hst1pass['q'] > 0) & (hst1pass['q'] <= Q_MAX) & (
-                                            ~np.isnan(hst1pass['nAppearances'])) & (
-                                                    hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
-                                                    matchRes <= self.max_pix_tol)
-
-                            refStarIdx = hst1pass[selection]['refCatIndex'].value
-
-                            nData = len(refStarIdx)
-
-                            ## print("CHIP:", chipTitle, "N_STARS:", nData)
-
-                            nDataAll[jjj] += nData
-
-                            xi  = self.refCat[refStarIdx]['xt'] / vaFactor
-                            eta = self.refCat[refStarIdx]['yt'] / vaFactor
-
-                            XC = hst1pass['X'][selection] - X0
-                            YC = hst1pass['Y'][selection] - Y0[chip - 1]
-
-                            if self.make_lithographic_and_filter_mask_corrections:
-                                dcorr = np.array(litho.interp_dtab_ftab_data(
-                                    self.dtabs[jjj],
-                                    hst1pass['X'][selection].value,
-                                    hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
-
-                                fcorr = np.array(litho.interp_dtab_ftab_data(
-                                    self.ftabs[jjj],
-                                    hst1pass['X'][selection].value,
-                                    hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
-
-                                ## print(dcorr)
-                                ## print(fcorr)
-
-                                ## Apply the lithographic and filter mask correction
-                                XC -= (dcorr[:, 2] - fcorr[:, 2])
-                                YC -= (dcorr[:, 3] - fcorr[:, 3])
-
-                                del dcorr
-                                del fcorr
-
-                            Xp, scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
-
-                            Xkp_A = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_A))
-                            Xkp_B = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_B))
-
-                            for ii, p in enumerate(self.splineParsIndices_A):
-                                for k in range(self.nParsK):
-                                    Xkp_A[:, ii * self.nParsK + k] = Xt[0,k] * Xp[:, p]
-
-                            for ii, p in enumerate(self.splineParsIndices_B):
-                                for k in range(self.nParsK):
-                                    Xkp_B[:, ii * self.nParsK + k] = Xt[0,k] * Xp[:, p]
-
-                            XpAll_A[jjj].append(Xp[:, self.indivParsIndices_A])
-                            XpAll_B[jjj].append(Xp[:, self.indivParsIndices_B])
-
-                            XkpAll_A[jjj].append(sparse.csr_matrix(Xkp_A, dtype='d'))
-                            XkpAll_B[jjj].append(sparse.csr_matrix(Xkp_B, dtype='d'))
-
-                            centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
-
-                            xiAll[jjj].append(xi)
-                            etaAll[jjj].append(eta)
-
-                            xyRawAll[jjj].append(
-                                np.vstack([hst1pass['X'][selection], hst1pass['Y'][selection] - yzp]).T)
-
-                            plateIDAll[jjj].append(np.full(nData, i, dtype=int))
-                            indicesAll[jjj].append(np.argwhere(selection).flatten())
-
-                            tAll[jjj].append(np.full(nData, t_acs.decimalyear))
-
-                            rootnamesAll[jjj].append(np.full(nData, rootName, dtype=object))
-
-                            dxAll[jjj].append(xi[centerStar])
-                            dyAll[jjj].append(eta[centerStar])
-                            rollAll[jjj].append(np.deg2rad(orientat))
-
-                            matchResAll[jjj].append(np.array([delX[selection], delY[selection]]).T)
-
-                            nDataImages[jjj].append(nData)
-
-                    hduList.close()
-
-                    gc.set_threshold(2, 1, 1)
-                    ## print('Thresholds:', gc.get_threshold())
-                    ## print('Counts:', gc.get_count())
-
-                    del hduList
-                    del hst1pass
-                    gc.collect()
-                    ## print('Counts:', gc.get_count())
-                else:
-                    del hduList
-                    gc.collect()
+            for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
+                self._processFile(i, hst1passFile, imageFilename)
 
         print()
-        print("NUMBER OF SELECTED FILES:", nOkay)
+        print("NUMBER OF SELECTED FILES:", self.nOkay)
 
-        okayIDs = np.array(okayIDs)
+        self.okayIDs = np.array(self.okayIDs)
 
-        nDataImages = np.array(nDataImages)
+        self.nDataImages = np.array(self.nDataImages)
 
-        XtAll = np.vstack(XtAll)
-        tObs  = np.array(tObs)
+        self.XtAll = np.vstack(self.XtAll)
+        self.tObs  = np.array(self.tObs)
 
         gc.set_threshold(2, 1, 1)
 
         for chip in chips:
             jjj = chip - 1
 
-            xiAll[jjj] = np.hstack(xiAll[jjj])
-            etaAll[jjj] = np.hstack(etaAll[jjj])
+            self.xiAll[jjj] = np.hstack(self.xiAll[jjj])
+            self.etaAll[jjj] = np.hstack(self.etaAll[jjj])
 
-            plateIDAll[jjj]   = np.hstack(plateIDAll[jjj])
-            indicesAll[jjj]   = np.hstack(indicesAll[jjj])
-            tAll[jjj]         = np.hstack(tAll[jjj])
-            rootnamesAll[jjj] = np.hstack(rootnamesAll[jjj])
+            self.plateIDAll[jjj]   = np.hstack(self.plateIDAll[jjj])
+            self.indicesAll[jjj]   = np.hstack(self.indicesAll[jjj])
+            self.tAll[jjj]         = np.hstack(self.tAll[jjj])
+            self.rootnamesAll[jjj] = np.hstack(self.rootnamesAll[jjj])
 
-            dxAll[jjj]   = np.hstack(dxAll[jjj])
-            dyAll[jjj]   = np.hstack(dyAll[jjj])
-            rollAll[jjj] = np.hstack(rollAll[jjj])
+            self.dxAll[jjj]   = np.hstack(self.dxAll[jjj])
+            self.dyAll[jjj]   = np.hstack(self.dyAll[jjj])
+            self.rollAll[jjj] = np.hstack(self.rollAll[jjj])
 
-            XAll_A[jjj] = sparse.hstack([sparse.block_diag(XpAll_A[jjj], format='csr'), sparse.vstack(XkpAll_A[jjj])])
-            XAll_B[jjj] = sparse.hstack([sparse.block_diag(XpAll_B[jjj], format='csr'), sparse.vstack(XkpAll_B[jjj])])
+            XAll_A[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_A[jjj], format='csr'), sparse.vstack(self.XkpAll_A[jjj])])
+            XAll_B[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_B[jjj], format='csr'), sparse.vstack(self.XkpAll_B[jjj])])
 
-            xyRawAll[jjj] = np.vstack(xyRawAll[jjj])
+            self.xyRawAll[jjj] = np.vstack(self.xyRawAll[jjj])
 
-            matchResAll[jjj] = np.vstack(matchResAll[jjj])
+            self.matchResAll[jjj] = np.vstack(self.matchResAll[jjj])
 
-            XpAll_A[jjj]  = None
-            XpAll_B[jjj]  = None
-            XkpAll_A[jjj] = None
-            XkpAll_B[jjj] = None
+            self.XpAll_A[jjj]  = None
+            self.XpAll_B[jjj]  = None
+            self.XkpAll_A[jjj] = None
+            self.XkpAll_B[jjj] = None
 
-        del XpAll_A
-        del XkpAll_A
-        del XpAll_B
-        del XkpAll_B
+        del self.XpAll_A
+        del self.XkpAll_A
+        del self.XpAll_B
+        del self.XkpAll_B
         gc.collect()
 
         elapsedTime = time.time() - startTime
@@ -1456,12 +1273,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 nonZeroSplines.append(nonZero)
                 BSplines.append(BSpline)
 
-            for ii in range(1, XtAll.shape[1]):
-                nonZero = XtAll[:, ii] > 0
+            for ii in range(1, self.XtAll.shape[1]):
+                nonZero = self.XtAll[:, ii] > 0
 
                 color = colors[(ii - 1) % len(colors)]
 
-                ax1.plot(tObs[nonZero], XtAll[nonZero, ii], '.', color=color, rasterized=True)
+                ax1.plot(self.tObs[nonZero], self.XtAll[nonZero, ii], '.', color=color, rasterized=True)
 
             for ii in range(self.tKnot.size):
                 ax1.axvline(self.tKnot[ii], linewidth=1, linestyle='-', color=knotColors[0])
@@ -1485,7 +1302,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             plt.close(fig=fig1)
 
-        self.nImages = nOkay
+        self.nImages = self.nOkay
 
         print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
 
@@ -1494,16 +1311,16 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         print("P_A = {0:d}".format(P_A))
         print("P_B = {0:d}".format(P_B))
-        print("N =", nDataAll)
+        print("N =", self.nDataAll)
 
         scalerArrayAll_A = np.zeros(P_A)
         scalerArrayAll_B = np.zeros(P_B)
 
-        scalerArrayAll_A[:self.nImages * self.nParsIndiv_A]  = np.tile(scalerArray[self.indivParsIndices_A], self.nImages)
-        scalerArrayAll_A[self.nImages  * self.nParsIndiv_A:] = np.repeat(scalerArray[self.splineParsIndices_A], self.nParsK)
+        scalerArrayAll_A[:self.nImages * self.nParsIndiv_A]  = np.tile(self.scalerArray[self.indivParsIndices_A], self.nImages)
+        scalerArrayAll_A[self.nImages  * self.nParsIndiv_A:] = np.repeat(self.scalerArray[self.splineParsIndices_A], self.nParsK)
 
-        scalerArrayAll_B[:self.nImages * self.nParsIndiv_B]  = np.tile(scalerArray[self.indivParsIndices_B], self.nImages)
-        scalerArrayAll_B[self.nImages  * self.nParsIndiv_B:] = np.repeat(scalerArray[self.splineParsIndices_B], self.nParsK)
+        scalerArrayAll_B[:self.nImages * self.nParsIndiv_B]  = np.tile(self.scalerArray[self.indivParsIndices_B], self.nImages)
+        scalerArrayAll_B[self.nImages  * self.nParsIndiv_B:] = np.repeat(self.scalerArray[self.splineParsIndices_B], self.nParsK)
 
         N_ITER_OUTER = 10
         N_ITER_INNER = 100
@@ -1541,6 +1358,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         startTimeAll = time.time()
         for chip in chips:
+            chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1])
+
             finalCoeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
                                                                                                              chip,
                                                                                                              self.pOrder,
@@ -1563,35 +1382,36 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 jjj = chip - 1
 
-                dxs = dxAll[jjj]
-                dys = dyAll[jjj]
-                rolls = rollAll[jjj]
+                if (self.individualZP or (chip == 1)):
+                    dxs   = [self.dxAll[jjj]]
+                    dys   = [self.dyAll[jjj]]
+                    rolls = [self.rollAll[jjj]]
 
-                plateID   = plateIDAll[jjj]
-                indices   = indicesAll[jjj]
-                tObs      = tAll[jjj]
-                rootnames = rootnamesAll[jjj]
+                plateID   = self.plateIDAll[jjj]
+                indices   = self.indicesAll[jjj]
+                self.tObs = self.tAll[jjj]
+                rootnames = self.rootnamesAll[jjj]
 
                 X_A = deepcopy(XAll_A[jjj])
                 X_B = deepcopy(XAll_B[jjj])
 
                 ## Initialize the reference coordinates
-                xiRef  = deepcopy(xiAll[jjj])
-                etaRef = deepcopy(etaAll[jjj])
+                xiRef  = deepcopy(self.xiAll[jjj])
+                etaRef = deepcopy(self.etaAll[jjj])
 
                 ## Initialize the raw coordinates
-                xyRaw = xyRawAll[jjj]
+                xyRaw = self.xyRawAll[jjj]
 
                 ## Initialize the weights using the match residuals
                 ## weights = np.ones(X.shape[0])
-                residuals = matchResAll[jjj]
+                residuals = self.matchResAll[jjj]
 
                 ## Use the weights to estimate the mean and covariance matrix of the residual
                 ## distribution. Calculate the mean and covariance matrix for individual exposures,
                 ## as they are time-dependent
                 weights = np.zeros(residuals.shape[0])
-                for i in range(nOkay):
-                    j = okayIDs[i]
+                for i in range(self.nOkay):
+                    j = self.okayIDs[i]
 
                     selection = plateID == j
 
@@ -1617,18 +1437,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     pp2 = PdfPages(plotFilename2)
 
                 for iteration in range(N_ITER_OUTER):
-                    print("OUTER_ITERATION {0:d}, AVERAGE SHIFTS AND ROLL:".format(iteration + 1), np.nanmean(dxs),
-                          np.nanmean(dys), np.nanmean(rolls))
-                    for i in range(nOkay):
-                        j = okayIDs[i]
-
-                        sx, sy, roll = dxs[i], dys[i], rolls[i]
-
-                        selection = plateID == j
-
-                        xiRef[selection], etaRef[selection] = coords.shift_rotate_coords(xiRef[selection],
-                                                                                         etaRef[selection],
-                                                                                         sx, sy, roll)
+                    print("OUTER_ITERATION {0:d}, AVERAGE SHIFTS AND ROLL:".format(iteration + 1),
+                          np.nanmean(dxs[iteration]), np.nanmean(dys[iteration]), np.nanmean(rolls[iteration]))
+                    if (self.individualZP or (chip == 1)):
+                       xiRef, etaRef = self._shiftRotateReferenceCoordinates(xiRef, etaRef, plateID, dxs[iteration],
+                                                                             dys[iteration], rolls[iteration])
+                    else:
+                        for (dx, dy, roll) in zip(dxs, dys, rolls):
+                            xiRef, etaRef = self._shiftRotateReferenceCoordinates(xiRef, etaRef, plateID, dx, dy, roll)
 
                     for iteration2 in range(N_ITER_INNER):
                         startTime = time.time()
@@ -1686,8 +1502,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         ## Use the weights to estimate the mean and covariance matrix of the residual
                         ## distribution
-                        for i in range(nOkay):
-                            j = okayIDs[i]
+                        for i in range(self.nOkay):
+                            j = self.okayIDs[i]
 
                             selection = plateID == j
 
@@ -1715,7 +1531,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         elapsedTime = time.time() - startTime
 
                         print(chip, iteration + 1, iteration2 + 1,
-                              "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (xiAll[jjj].size)),
+                              "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (self.xiAll[jjj].size)),
                               "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum),
                               "Elapsed time: {0}".format(convertTime(elapsedTime)))
 
@@ -1874,8 +1690,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             end_A = self.nImages * self.nParsIndiv_A
                             end_B = self.nImages * self.nParsIndiv_B
 
-                            dxs = coeffsA[0:end_A:self.nParsIndiv_A]
-                            dys = coeffsB[0:end_B:self.nParsIndiv_B]
+                            dxs.append(coeffsA[0:end_A:self.nParsIndiv_A])
+                            dys.append(coeffsB[0:end_B:self.nParsIndiv_B])
 
                             if (self.pOrderIndiv == 0):
                                 coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
@@ -1883,14 +1699,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 start = self.nImages * self.nParsIndiv_B + self.nParsK
                                 end   = start + self.nParsK
 
-                                coeffsB3 = XtAll @ coeffsB[start:end]
+                                coeffsB3 = self.XtAll @ coeffsB[start:end]
                             else:
                                 thisP = 2
 
                                 coeffsA3 = coeffsA[thisP:end_A:self.nParsIndiv_A]
                                 coeffsB3 = coeffsB[thisP:end_B:self.nParsIndiv_B]
 
-                            rolls = -np.arctan(coeffsA3 / coeffsB3)
+                            rolls.append(-np.arctan(coeffsA3 / coeffsB3))
 
                             break
                         else:
@@ -1906,8 +1722,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             plateID   = plateID[~rejected]
                             indices   = indices[~rejected]
-                            tObs      = tObs[~rejected]
+                            self.tObs = self.tObs[~rejected]
                             rootnames = rootnames[~rejected]
+
+                    if (not (self.individualZP or (chip == 1))):
+                        break
 
                 if makePlots:
                     pp1.close()
@@ -1929,8 +1748,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 outTable = QTable(
                     [xyRaw[:, 0], xyRaw[:, 1], xiPred, etaPred, xiRef, etaRef, residualsXi, residualsEta, weights, plateID,
-                     indices, tObs, rootnames, np.full_like(rootnames, chip)], names=(
-                    'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'indices', 'tObs', 'rootname', 'chip'))
+                     indices, self.tObs, rootnames, np.full_like(rootnames, chip)], names=(
+                    'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'indices', 'self.tObs', 'rootname', 'chip'))
 
                 outTable.write(outTableFilename, overwrite=True)
 
@@ -2472,3 +2291,211 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         elapsedTime = time.time() - startTimeAll
         print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
+
+
+    def _processFile(self, i, hst1passFile, imageFilename):
+        addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+
+        baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
+
+        rootName = baseImageFilename.split('_')[0]
+
+        if (os.path.exists(imageFilename)) and (os.path.exists(addendumFilename)):
+            hduList = fits.open(imageFilename)
+
+            tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
+            t_acs = Time(tstring, scale='utc', format='fits')
+
+            tExp = float(hduList[0].header['EXPTIME'])
+
+            posTarg1 = float(hduList[0].header['POSTARG1'])
+            posTarg2 = float(hduList[0].header['POSTARG2'])
+
+            posTargResultant = np.sqrt(posTarg1 ** 2 + posTarg2 ** 2)
+
+            if ((t_acs.decimalyear >= self.tMin) and (t_acs.decimalyear <= self.tMax) and (tExp > self.min_t_exp)
+                    and (posTargResultant <= self.max_pos_targs)):
+                pa_v3 = float(hduList[0].header['PA_V3'])
+
+                dt = t_acs.decimalyear - self.tRef0.utc.value
+
+                ## We use the observation time, in combination with the proper motions to move
+                ## the coordinates into the time
+                self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
+                self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+
+                hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+
+                delX = hst1pass['xPred'] - hst1pass['xRef']
+                delY = hst1pass['yPred'] - hst1pass['yRef']
+
+                matchRes = np.sqrt(delX ** 2 + delY ** 2)
+
+                okays = np.zeros(chips.size, dtype='bool')
+                nDataBad = np.zeros(chips.size, dtype=int)
+                for chip in chips:
+                    jjj = chip - 1
+
+                    selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
+                            hst1pass['q'] <= Q_MAX) & (~np.isnan(hst1pass['nAppearances'])) & (
+                                        hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
+                                        matchRes <= self.max_pix_tol)
+
+                    nDataBad[jjj] = len(hst1pass[selection])
+
+                    if (nDataBad[jjj] > self.min_n_refstar):
+                        okays[jjj] = True
+
+                    '''
+                    print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]),
+                          "N_STARS =", nDataBad[jjj], "OKAY:", okays[jjj])
+                    ''';
+
+                del selection
+                gc.collect()
+
+                okayToProceed = np.prod(okays, dtype='bool')
+
+                ## print("OKAY TO PROCEED:", okayToProceed)
+
+                Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
+
+                if okayToProceed:
+                    print(rootName, end=' ')
+                    self.selectedHST1PassFiles.append(hst1passFile)
+                    self.selectedImageFiles.append(imageFilename)
+
+                    self.nOkay += 1
+
+                    self.okayIDs.append(i)
+
+                    self.XtAll.append(Xt)
+                    self.tObs.append(t_acs.decimalyear)
+
+                    for chip in chips:
+                        jj = 2 - chip
+                        jjj = chip - 1
+
+                        chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1],
+                                                            acsconstants.CHIP_POSITIONS[chip - 1])
+
+                        hdu = hduList['SCI', chip]
+
+                        ## Zero point of the y coordinates.
+                        if (chip == 1):
+                            yzp = 0.0
+                            naxis2 = int(hdu.header['NAXIS2'])
+                        else:
+                            yzp += float(naxis2)
+
+                            naxis2 = int(hdu.header['NAXIS2'])
+
+                        orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
+                        vaFactor = float(hdu.header['VAFACTOR'])
+
+                        selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (
+                                hst1pass['q'] > 0) & (hst1pass['q'] <= Q_MAX) & (
+                                        ~np.isnan(hst1pass['nAppearances'])) & (
+                                            hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
+                                            matchRes <= self.max_pix_tol)
+
+                        refStarIdx = hst1pass[selection]['refCatIndex'].value
+
+                        nData = len(refStarIdx)
+
+                        ## print("CHIP:", chipTitle, "N_STARS:", nData)
+
+                        self.nDataAll[jjj] += nData
+
+                        xi = self.refCat[refStarIdx]['xt'] / vaFactor
+                        eta = self.refCat[refStarIdx]['yt'] / vaFactor
+
+                        XC = hst1pass['X'][selection] - X0
+                        YC = hst1pass['Y'][selection] - Y0[chip - 1]
+
+                        if self.make_lithographic_and_filter_mask_corrections:
+                            dcorr = np.array(litho.interp_dtab_ftab_data(
+                                self.dtabs[jjj],
+                                hst1pass['X'][selection].value,
+                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+
+                            fcorr = np.array(litho.interp_dtab_ftab_data(
+                                self.ftabs[jjj],
+                                hst1pass['X'][selection].value,
+                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+
+                            ## Apply the lithographic and filter mask correction
+                            XC -= (dcorr[:, 2] - fcorr[:, 2])
+                            YC -= (dcorr[:, 3] - fcorr[:, 3])
+
+                            del dcorr
+                            del fcorr
+
+                        Xp, self.scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
+
+                        Xkp_A = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_A))
+                        Xkp_B = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_B))
+
+                        for ii, p in enumerate(self.splineParsIndices_A):
+                            for k in range(self.nParsK):
+                                Xkp_A[:, ii * self.nParsK + k] = Xt[0, k] * Xp[:, p]
+
+                        for ii, p in enumerate(self.splineParsIndices_B):
+                            for k in range(self.nParsK):
+                                Xkp_B[:, ii * self.nParsK + k] = Xt[0, k] * Xp[:, p]
+
+                        self.XpAll_A[jjj].append(Xp[:, self.indivParsIndices_A])
+                        self.XpAll_B[jjj].append(Xp[:, self.indivParsIndices_B])
+
+                        self.XkpAll_A[jjj].append(sparse.csr_matrix(Xkp_A, dtype='d'))
+                        self.XkpAll_B[jjj].append(sparse.csr_matrix(Xkp_B, dtype='d'))
+
+                        centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
+
+                        self.xiAll[jjj].append(xi)
+                        self.etaAll[jjj].append(eta)
+
+                        self.xyRawAll[jjj].append(
+                            np.vstack([hst1pass['X'][selection], hst1pass['Y'][selection] - yzp]).T)
+
+                        self.plateIDAll[jjj].append(np.full(nData, i, dtype=int))
+                        self.indicesAll[jjj].append(np.argwhere(selection).flatten())
+
+                        self.tAll[jjj].append(np.full(nData, t_acs.decimalyear))
+
+                        self.rootnamesAll[jjj].append(np.full(nData, rootName, dtype=object))
+
+                        self.dxAll[jjj].append(xi[centerStar])
+                        self.dyAll[jjj].append(eta[centerStar])
+                        self.rollAll[jjj].append(np.deg2rad(orientat))
+
+                        self.matchResAll[jjj].append(np.array([delX[selection], delY[selection]]).T)
+
+                        self.nDataImages[jjj].append(nData)
+
+                hduList.close()
+
+                gc.set_threshold(2, 1, 1)
+                ## print('Thresholds:', gc.get_threshold())
+                ## print('Counts:', gc.get_count())
+
+                del hduList
+                del hst1pass
+                gc.collect()
+                ## print('Counts:', gc.get_count())
+            else:
+                del hduList
+                gc.collect()
+
+    def _shiftRotateReferenceCoordinates(self, xiRef, etaRef, plateID, dx, dy, roll):
+        for i in range(self.nOkay):
+            j = self.okayIDs[i]
+
+            sx, sy, roll = dx[i], dy[i], roll[i]
+
+            selection = plateID == j
+
+            xiRef[selection], etaRef[selection] = coords.shift_rotate_coords(xiRef[selection],
+                                                                             etaRef[selection],
+                                                                             sx, sy, roll)
+        return xiRef, etaRef
