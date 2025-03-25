@@ -149,7 +149,7 @@ class SIPEstimator:
         matchRes = np.sqrt((hst1pass['xPred'] - hst1pass['xRef']) ** 2 + (hst1pass['yPred'] - hst1pass['yRef']) ** 2)
 
         okays = np.zeros(chips.size, dtype='bool')
-        nDataBad = np.zeros(chips.size, dtype=int)
+        nGoodData = np.zeros(chips.size, dtype=int)
         for chip in chips:
             jjj = chip - 1
 
@@ -158,12 +158,12 @@ class SIPEstimator:
                                     hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
                                     matchRes <= self.max_pix_tol)
 
-            nDataBad[jjj] = len(hst1pass[selection])
+            nGoodData[jjj] = len(hst1pass[selection])
 
-            if (nDataBad[jjj] > self.min_n_refstar):
+            if (nGoodData[jjj] > self.min_n_refstar):
                 okays[jjj] = True
 
-            print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]), "N_STARS =", nDataBad[jjj], "OKAY:", okays[jjj])
+            print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]), "N_STARS =", nGoodData[jjj], "OKAY:", okays[jjj])
 
         del selection
         gc.collect()
@@ -956,7 +956,7 @@ class SIPEstimator:
         else:
             print(
                 "NOT ENOUGH GOOD-QUALITY REFERENCE STARS IN THE PLATE CATALOGUE. N_REF_STARS = {0} (MININUM {1:d} ON ALL CHIPS)".format(
-                    nDataBad, self.min_n_refstar))
+                    nGoodData, self.min_n_refstar))
 
         hduList.close()
 
@@ -1167,10 +1167,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             pool = mp.Pool(min(nCPUs, nJobs))
 
-            pool.starmap_async(self._processFile, argumentList)
+            _ = pool.starmap_async(self._processFile, argumentList)
 
             pool.close()
 
+            pool.join()
+        else:
             for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
                 self._processFile(i, hst1passFile, imageFilename)
 
@@ -1749,7 +1751,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 outTable = QTable(
                     [xyRaw[:, 0], xyRaw[:, 1], xiPred, etaPred, xiRef, etaRef, residualsXi, residualsEta, weights, plateID,
                      indices, self.tObs, rootnames, np.full_like(rootnames, chip)], names=(
-                    'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'indices', 'self.tObs', 'rootname', 'chip'))
+                    'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'indices', 'tObs', 'rootname', 'chip'))
 
                 outTable.write(outTableFilename, overwrite=True)
 
@@ -2331,8 +2333,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 matchRes = np.sqrt(delX ** 2 + delY ** 2)
 
-                okays = np.zeros(chips.size, dtype='bool')
-                nDataBad = np.zeros(chips.size, dtype=int)
+                okays     = np.zeros(chips.size, dtype='bool')
+                nGoodData = np.zeros(chips.size, dtype=int)
                 for chip in chips:
                     jjj = chip - 1
 
@@ -2341,14 +2343,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                         hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
                                         matchRes <= self.max_pix_tol)
 
-                    nDataBad[jjj] = len(hst1pass[selection])
+                    nGoodData[jjj] = len(hst1pass[selection])
 
-                    if (nDataBad[jjj] > self.min_n_refstar):
+                    if (nGoodData[jjj] > self.min_n_refstar):
                         okays[jjj] = True
 
                     '''
                     print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]),
-                          "N_STARS =", nDataBad[jjj], "OKAY:", okays[jjj])
+                          "N_STARS =", nGoodData[jjj], "OKAY:", okays[jjj])
                     ''';
 
                 del selection
@@ -2487,11 +2489,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 del hduList
                 gc.collect()
 
-    def _shiftRotateReferenceCoordinates(self, xiRef, etaRef, plateID, dx, dy, roll):
+    def _shiftRotateReferenceCoordinates(self, xiRef, etaRef, plateID, dx, dy, rotation):
         for i in range(self.nOkay):
             j = self.okayIDs[i]
 
-            sx, sy, roll = dx[i], dy[i], roll[i]
+            sx, sy, roll = dx[i], dy[i], rotation[i]
 
             selection = plateID == j
 
