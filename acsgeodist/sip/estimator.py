@@ -1034,7 +1034,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             for jj in range(n - ii):
                 ppp = sip.getUpperTriangularIndex(jj, ii)
                 self.indivParsIndices_A.append(ppp)
-                self.indivParsIndices_B.append(ppp)
+
+                if (self.individualZP):
+                    self.indivParsIndices_B.append(ppp)
 
         if (self.pOrderIndiv < 1):
             self.indivParsIndices_A.append(2)
@@ -2447,7 +2449,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 Xkp_B[:, ii * self.nParsK + k] = Xt[0, k] * Xp[:, p]
 
                         self.XpAll_A[jjj].append(Xp[:, self.indivParsIndices_A])
-                        self.XpAll_B[jjj].append(Xp[:, self.indivParsIndices_B])
+                        if (self.indivParsIndices_B.size > 0):
+                            self.XpAll_B[jjj].append(Xp[:, self.indivParsIndices_B])
 
                         self.XkpAll_A[jjj].append(sparse.csr_matrix(Xkp_A, dtype='d'))
                         self.XkpAll_B[jjj].append(sparse.csr_matrix(Xkp_B, dtype='d'))
