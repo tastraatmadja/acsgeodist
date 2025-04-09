@@ -1034,9 +1034,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             for jj in range(n - ii):
                 ppp = sip.getUpperTriangularIndex(jj, ii)
                 self.indivParsIndices_A.append(ppp)
-
-                if (self.individualZP):
-                    self.indivParsIndices_B.append(ppp)
+                self.indivParsIndices_B.append(ppp)
 
         if (self.pOrderIndiv < 1):
             self.indivParsIndices_A.append(2)
@@ -1205,8 +1203,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             self.dyAll[jjj]   = np.hstack(self.dyAll[jjj])
             self.rollAll[jjj] = np.hstack(self.rollAll[jjj])
 
-            XAll_A[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_A[jjj], format='csr'), sparse.vstack(self.XkpAll_A[jjj])])
-            XAll_B[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_B[jjj], format='csr'), sparse.vstack(self.XkpAll_B[jjj])])
+            if (len(self.XpAll_A[jjj]) > 0):
+                XAll_A[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_A[jjj], format='csr'), sparse.vstack(self.XkpAll_A[jjj])])
+            else:
+                XAll_A[jjj] = sparse.vstack(self.XkpAll_A[jjj])
+
+            if (len(self.XpAll_B[jjj]) > 0):
+                XAll_B[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_B[jjj], format='csr'), sparse.vstack(self.XkpAll_B[jjj])])
+            else:
+                XAll_B[jjj] = sparse.vstack(self.XkpAll_B[jjj])
 
             self.xyRawAll[jjj] = np.vstack(self.xyRawAll[jjj])
 
@@ -1320,10 +1325,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         scalerArrayAll_A = np.zeros(P_A)
         scalerArrayAll_B = np.zeros(P_B)
 
-        scalerArrayAll_A[:self.nImages * self.nParsIndiv_A]  = np.tile(self.scalerArray[self.indivParsIndices_A], self.nImages)
+        if (self.nParsIndiv_A > 0):
+            scalerArrayAll_A[:self.nImages * self.nParsIndiv_A]  = np.tile(self.scalerArray[self.indivParsIndices_A], self.nImages)
         scalerArrayAll_A[self.nImages  * self.nParsIndiv_A:] = np.repeat(self.scalerArray[self.splineParsIndices_A], self.nParsK)
 
-        scalerArrayAll_B[:self.nImages * self.nParsIndiv_B]  = np.tile(self.scalerArray[self.indivParsIndices_B], self.nImages)
+        if (self.nParsIndiv_B > 0):
+            scalerArrayAll_B[:self.nImages * self.nParsIndiv_B]  = np.tile(self.scalerArray[self.indivParsIndices_B], self.nImages)
         scalerArrayAll_B[self.nImages  * self.nParsIndiv_B:] = np.repeat(self.scalerArray[self.splineParsIndices_B], self.nParsK)
 
         N_ITER_OUTER = 10
@@ -1383,7 +1390,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             if ((not os.path.exists(finalCoeffsAFilename)) or (not os.path.exists(finalCoeffsBFilename))
                     or (not os.path.exists(outTableFilename))):
-
                 jjj = chip - 1
 
                 if (self.individualZP or (chip == 1)):

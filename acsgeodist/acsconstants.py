@@ -15,6 +15,8 @@ COEFF_LABELS = ['A', 'B']
 
 WFC = ['WFC2', 'WFC1']
 
+WFC_COLORS = ['#1f78b4', '#33a02c']
+
 CHIP_POSITIONS = ['bottom', 'top']
 
 CHIP_LABEL = lambda wfc, pos : '{0:s} ({1:s})'.format(wfc, pos)
