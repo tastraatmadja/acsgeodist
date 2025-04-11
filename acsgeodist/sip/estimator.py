@@ -1399,7 +1399,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 plateID   = self.plateIDAll[jjj]
                 indices   = self.indicesAll[jjj]
-                self.tObs = self.tAll[jjj]
+                tObs      = self.tAll[jjj]
                 rootnames = self.rootnamesAll[jjj]
 
                 X_A = deepcopy(XAll_A[jjj])
@@ -1732,7 +1732,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             plateID   = plateID[~rejected]
                             indices   = indices[~rejected]
-                            self.tObs = self.tObs[~rejected]
+                            tObs      = tObs[~rejected]
                             rootnames = rootnames[~rejected]
 
                     if (not (self.individualZP or (chip == 1))):
@@ -1758,7 +1758,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 outTable = QTable(
                     [xyRaw[:, 0], xyRaw[:, 1], xiPred, etaPred, xiRef, etaRef, residualsXi, residualsEta, weights, plateID,
-                     indices, self.tObs, rootnames, np.full_like(rootnames, chip)], names=(
+                     indices, tObs, rootnames, np.full_like(rootnames, chip)], names=(
                     'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'indices', 'tObs', 'rootname', 'chip'))
 
                 outTable.write(outTableFilename, overwrite=True)
