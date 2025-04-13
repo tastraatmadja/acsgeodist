@@ -17,6 +17,7 @@ from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
 import multiprocessing as mp
 import numpy as np
 import os
+import pandas as pd
 from photutils.aperture import CircularAperture
 from scipy import interpolate, linalg, sparse
 import seaborn as sns
@@ -1113,6 +1114,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         self.nDataImages = []
 
+        self.rootnames = []
         self.XtAll = []
         self.tObs  = []
 
@@ -1183,8 +1185,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         self.nDataImages = np.array(self.nDataImages)
 
-        self.XtAll = np.vstack(self.XtAll)
-        self.tObs  = np.array(self.tObs)
+        self.rootnames = np.array(self.rootnames)
+        self.XtAll     = np.vstack(self.XtAll)
+        self.tObs      = np.array(self.tObs)
 
         gc.set_threshold(2, 1, 1)
 
@@ -1363,24 +1366,19 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         nonFullColor = '#fc8d59'  ## Orange
         discardedColor = 'r'
 
-        coeffsAFilenames  = []
-        coeffsBFilenames  = []
-        outTableFilenames = []
+        indivDataFilenames   = []
+        modelCoeffsFilenames = []
+        outTableFilenames    = []
 
         startTimeAll = time.time()
         for chip in chips:
             chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1])
 
-            finalCoeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
-                                                                                                             chip,
-                                                                                                             self.pOrder,
-                                                                                                             self.kOrder,
-                                                                                                             self.nKnots)
-            finalCoeffsBFilename = "{0:s}/coeffsB_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.npy".format(outDir,
-                                                                                                             chip,
-                                                                                                             self.pOrder,
-                                                                                                             self.kOrder,
-                                                                                                             self.nKnots)
+            indivDataFilename = '{0:s}/individualCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
+                outDir, chip, self.tMin, self.tMax)
+
+            modelCoeffsFilename = '{0:s}/splineCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
+                outDir, chip, self.tMin, self.tMax)
 
             outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(outDir,
                                                                                                              chip,
@@ -1388,7 +1386,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                                                              self.kOrder,
                                                                                                              self.nKnots)
 
-            if ((not os.path.exists(finalCoeffsAFilename)) or (not os.path.exists(finalCoeffsBFilename))
+            if ((not os.path.exists(indivDataFilename)) or (not os.path.exists(modelCoeffsFilename))
                     or (not os.path.exists(outTableFilename))):
                 jjj = chip - 1
 
@@ -1478,17 +1476,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         coeffsB, res, rnk, s = linalg.lstsq(A_B.todense(), b_eta, overwrite_a=True, overwrite_b=True)
 
                         coeffsB = coeffsB.flatten() * scalerY / scalerArrayAll_B
-                        '''
-                        reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
-
-                        reg.fit(X, xiRef / scalerX, sample_weight=weights)
-
-                        coeffsA = reg.coef_.flatten() * scalerX / scalerArrayAll
-
-                        reg.fit(X, etaRef / scalerY, sample_weight=weights)
-
-                        coeffsB = reg.coef_.flatten() * scalerY / scalerArrayAll
-                        ''';
 
                         if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)) and saveIntermediateResults:
                             coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
@@ -1747,8 +1734,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
 
-                np.save(finalCoeffsAFilename, coeffsA)
-                np.save(finalCoeffsBFilename, coeffsB)
+                self._parseIndividualAndSplineCoefficientsDataFrame(chip, coeffsA, coeffsB,
+                                                                   modelCoeffsFilename=modelCoeffsFilename,
+                                                                   indivDataFilename=indivDataFilename)
 
                 xiPred  = (X_A.multiply(scalerArrayAll_A)) @ coeffsA
                 etaPred = (X_B.multiply(scalerArrayAll_B)) @ coeffsB
@@ -1765,8 +1753,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 print("Residual table written to {0:s}".format(outTableFilename))
 
-            coeffsAFilenames.append(finalCoeffsAFilename)
-            coeffsBFilenames.append(finalCoeffsBFilename)
+            indivDataFilenames.append(indivDataFilename)
+            modelCoeffsFilenames.append(modelCoeffsFilename)
             outTableFilenames.append(outTableFilename)
 
         print("APPLYING TIME-DEPENDENT COEFFICIENTS TO SELECTED HST1PASS FILES...")
@@ -1776,6 +1764,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             ## Read the output table from the time-dependent coefficient fitting
             resids = table.vstack([ascii.read(outTableFilenames[0]),
                                    ascii.read(outTableFilenames[1])])
+
+            ## Read individual SIP coefficients and spline coefficients
+            df_indiv_data = pd.concat([pd.read_csv(indivDataFilename) for indivDataFilename in indivDataFilenames],
+                                      ignore_index=True)
+            df_spline_coeffs = pd.concat(
+                [pd.read_csv(modelCoeffsFilename) for modelCoeffsFilename in modelCoeffsFilenames], ignore_index=True)
 
             fitResultsText = []
 
@@ -1792,6 +1786,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     if (self.tMin <= t_acs.decimalyear <= self.tMax):
                         print(i, hst1passFile)
+
+                        rootname = hduList[0].header['ROOTNAME']
 
                         dt = t_acs.decimalyear - self.tRef0.utc.value
 
@@ -1918,22 +1914,17 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             thisCoeffsA = np.zeros((self.nParsSIP, 1), dtype=float)
                             thisCoeffsB = np.zeros_like(thisCoeffsA)
 
-                            coeffsA = np.load(coeffsAFilenames[jjj])
-                            coeffsB = np.load(coeffsBFilenames[jjj])
+                            for p in self.indivParsIndices_A:
+                                thisCoeffsA[p, 0] = self._getIndividualCoeffs(rootname, p, 0, chip, df_indiv_data)
+
+                            for p in self.indivParsIndices_B:
+                                thisCoeffsB[p, 0] = self._getIndividualCoeffs(rootname, p, 1, chip, df_indiv_data)
 
                             for p in self.splineParsIndices_A:
-                                ppp   = np.argwhere(self.splineParsIndices_A == p).flatten()[0]
-                                start = self.nImages * self.nParsIndiv_A + ppp * self.nParsK
-                                end   = start + self.nParsK
-
-                                thisCoeffsA[p, 0] = Xt @ coeffsA[start:end]
+                                thisCoeffsA[p, 0] = Xt @ self._getSplineCoeffs(p, 0, chip, df_spline_coeffs)
 
                             for p in self.splineParsIndices_B:
-                                ppp   = np.argwhere(self.splineParsIndices_B == p).flatten()[0]
-                                start = self.nImages * self.nParsIndiv_B + ppp * self.nParsK
-                                end   = start + self.nParsK
-
-                                thisCoeffsB[p, 0] = Xt @ coeffsB[start:end]
+                                thisCoeffsB[p, 0] = Xt @ self._getSplineCoeffs(p, 1, chip, df_spline_coeffs)
 
                             xPred = np.matmul(X * scalerArray, thisCoeffsA).flatten()
                             yPred = np.matmul(X * scalerArray, thisCoeffsB).flatten()
@@ -2302,13 +2293,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         elapsedTime = time.time() - startTimeAll
         print("ALL DONE! Elapsed time:", convertTime(elapsedTime))
 
-
     def _processFile(self, i, hst1passFile, imageFilename):
         addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
 
         baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
 
-        rootName = baseImageFilename.split('_')[0]
+        rootname = baseImageFilename.split('_')[0]
 
         if (os.path.exists(imageFilename)) and (os.path.exists(addendumFilename)):
             hduList = fits.open(imageFilename)
@@ -2371,7 +2361,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
 
                 if okayToProceed:
-                    print(rootName, end=' ')
+                    print(rootname, end=' ')
                     self.selectedHST1PassFiles.append(hst1passFile)
                     self.selectedImageFiles.append(imageFilename)
 
@@ -2379,6 +2369,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     self.okayIDs.append(i)
 
+                    self.rootnames.append(rootname)
                     self.XtAll.append(Xt)
                     self.tObs.append(t_acs.decimalyear)
 
@@ -2474,7 +2465,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         self.tAll[jjj].append(np.full(nData, t_acs.decimalyear))
 
-                        self.rootnamesAll[jjj].append(np.full(nData, rootName, dtype=object))
+                        self.rootnamesAll[jjj].append(np.full(nData, rootname, dtype=object))
 
                         self.dxAll[jjj].append(xi[centerStar])
                         self.dyAll[jjj].append(eta[centerStar])
@@ -2510,3 +2501,99 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                              etaRef[selection],
                                                                              sx, sy, roll)
         return xiRef, etaRef
+    def _getColumnNamesForIndividualCoefficients(self):
+        columns_indiv = ['rootname', 'tObs', 'chip']
+
+        for p in range(self.nParsSIP):
+            if (p in self.indivParsIndices_A):
+                columns_indiv.append(r'{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[0], p + 1))
+            if (p in self.indivParsIndices_B):
+                columns_indiv.append(r'{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[1], p + 1))
+        return columns_indiv
+
+    def _getColumnNamesForSplineCoefficients(self):
+        columns_model = ['p', 'coeff_label', 'chip']
+
+        for iii in range(self.nParsK):
+            columns_model.append('k_{0:d}'.format(iii))
+
+        return columns_model
+
+    def _parseIndividualAndSplineCoefficientsDataFrame(self, chip, coeffsA, coeffsB,
+                                                       modelCoeffsFilename='./splineCoeffs.csv',
+                                                       indivDataFilename='./individualCoeffs.csv'):
+        data_indiv = [self.rootnames, self.tObs, np.full_like(self.tObs, chip, dtype=int)]
+        data_model = []
+
+        columns_indiv = self._getColumnNamesForIndividualCoefficients()
+        columns_model = self._getColumnNamesForSplineCoefficients()
+
+        for p in range(self.nParsSIP):
+            for axis in range(acsconstants.NAXIS):
+                coeffsIndiv = None
+                coeffsModel = None
+
+                if ((p in self.indivParsIndices_A) or (p in self.indivParsIndices_B)):
+                    if (axis == 0) and (p in self.indivParsIndices_A):
+                        iii  = np.argwhere(self.indivParsIndices_A == p).flatten()[0]
+                        end  = self.nImages * self.nParsIndiv_A
+                        jump = self.nParsIndiv_A
+
+                        coeffsIndiv = coeffsA[iii:end:jump]
+
+                    elif (axis == 1) and (p in self.indivParsIndices_B):
+                        iii  = np.argwhere(self.indivParsIndices_B == p).flatten()[0]
+                        end  = self.nImages * self.nParsIndiv_B
+                        jump = self.nParsIndiv_B
+
+                        coeffsIndiv = coeffsB[iii:end:jump]
+
+                if ((p in self.splineParsIndices_A) or (p in self.splineParsIndices_B)):
+                    if (axis == 0) and (p in self.splineParsIndices_A):
+                        iii   = np.argwhere(self.splineParsIndices_A == p).flatten()[0]
+                        start = self.nImages * self.nParsIndiv_A + iii * self.nParsK
+                        end   = start + self.nParsK
+
+                        coeffsModel = coeffsA[start:end]
+
+                    elif (axis == 1) and (p in self.splineParsIndices_B):
+                        iii   = np.argwhere(self.splineParsIndices_B == p).flatten()[0]
+                        start = self.nImages * self.nParsIndiv_B + iii * self.nParsK
+                        end   = start + self.nParsK
+
+                        coeffsModel = coeffsB[start:end]
+
+                if (coeffsIndiv is not None):
+                    data_indiv.append(coeffsIndiv)
+
+                if (coeffsModel is not None):
+                    dataLine = [p, r'{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], p + 1), chip]
+
+                    for coefficient in coeffsModel:
+                        dataLine.append(coefficient)
+
+                    data_model.append(dataLine)
+
+        df_spline_coeffs = pd.DataFrame(data_model, columns=columns_model)
+
+        df_spline_coeffs.to_csv(modelCoeffsFilename, index=False)
+
+        df_indiv_data = pd.DataFrame(np.vstack(data_indiv).T.tolist(), columns=columns_indiv).sort_values(
+            ['rootname', 'chip'], ascending=[True, True]).reset_index()
+
+        df_indiv_data.to_csv(indivDataFilename, index=False)
+
+    def _getIndividualCoeffs(self, rootname, p, axis, chip, df):
+        sel = df['rootname'].str.contains(rootname) & (df['chip'] == chip)
+        if (df[sel].size > 0):
+            columnName = '{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], p + 1)
+            if columnName in df.columns:
+                return df[sel]['{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], p + 1)].values[0]
+            else:
+                return 0.0
+        else:
+            return 0.0
+
+    def _getSplineCoeffs(self, p, axis, chip, df):
+        sel = (df['coeff_label'] == '{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], p + 1)) & (df['chip'] == chip)
+        return df[sel][['k_{0:d}'.format(k) for k in range(self.nParsK)]].values.reshape((-1,1))
