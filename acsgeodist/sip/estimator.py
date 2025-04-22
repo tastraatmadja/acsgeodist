@@ -1085,6 +1085,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', makePlots=True,
                                                  saveIntermediateResults=True, nCPUs=None, **kwargs):
+
+        startTimeAll = time.time()
+
         self.nOkay    = 0
         self.nDataAll = np.zeros(2, dtype=int)
 
@@ -1125,8 +1128,36 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         startTime = time.time()
 
+        indivDataFilenames   = []
+        modelCoeffsFilenames = []
+        outTableFilenames    = []
+
+        okays = []
+
         for chip in chips:
             jjj = chip - 1
+
+            indivDataFilename = '{0:s}/individualCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
+                outDir, chip, self.tMin, self.tMax)
+
+            modelCoeffsFilename = '{0:s}/splineCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
+                outDir, chip, self.tMin, self.tMax)
+
+            outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(outDir,
+                                                                                                             chip,
+                                                                                                             self.pOrder,
+                                                                                                             self.kOrder,
+                                                                                                             self.nKnots)
+
+            indivDataFilenames.append(indivDataFilename)
+            modelCoeffsFilenames.append(modelCoeffsFilename)
+            outTableFilenames.append(outTableFilename)
+
+            if (os.path.exists(indivDataFilename) and os.path.exists(modelCoeffsFilename) and
+                    os.path.exists(outTableFilename)):
+                okays.append(True)
+            else:
+                okays.append(False)
 
             self.plateIDAll.append([])
             self.indicesAll.append([])
@@ -1154,241 +1185,229 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             XAll_A.append([])
             XAll_B.append([])
 
-        print("READING FILES...")
-        self.scalerArray           = np.ones(self.nParsSIP)
-        self.selectedHST1PassFiles = []
-        self.selectedImageFiles    = []
-        if (nCPUs is not None):
-            argumentList = [(i, hst1passFile, imageFilename) for i, (hst1passFile, imageFilename) in
-                            enumerate(zip(hst1passFiles, imageFilenames))]
+        proceed = ~np.prod(np.array(okays, dtype=bool), dtype=bool)
 
-            nJobs = len(argumentList)
+        if proceed:
+            print("READING FILES...")
+            self.scalerArray           = np.ones(self.nParsSIP)
+            self.selectedHST1PassFiles = []
+            self.selectedImageFiles    = []
+            if (nCPUs is not None):
+                argumentList = [(i, hst1passFile, imageFilename) for i, (hst1passFile, imageFilename) in
+                                enumerate(zip(hst1passFiles, imageFilenames))]
 
-            print("NUMBER OF CPUS:", nCPUs)
-            print("NUMBER OF JOBS:", nJobs)
+                nJobs = len(argumentList)
 
-            pool = mp.Pool(min(nCPUs, nJobs))
+                print("NUMBER OF CPUS:", nCPUs)
+                print("NUMBER OF JOBS:", nJobs)
 
-            _ = pool.starmap_async(self._processFile, argumentList)
+                pool = mp.Pool(min(nCPUs, nJobs))
 
-            pool.close()
+                _ = pool.starmap_async(self._processFile, argumentList)
 
-            pool.join()
-        else:
-            for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
-                self._processFile(i, hst1passFile, imageFilename)
+                pool.close()
 
-        print()
-        print("NUMBER OF SELECTED FILES:", self.nOkay)
-
-        self.okayIDs = np.array(self.okayIDs)
-
-        self.nDataImages = np.array(self.nDataImages)
-
-        self.rootnames = np.array(self.rootnames)
-        self.XtAll     = np.vstack(self.XtAll)
-        self.tObs      = np.array(self.tObs)
-
-        gc.set_threshold(2, 1, 1)
-
-        for chip in chips:
-            jjj = chip - 1
-
-            self.xiAll[jjj] = np.hstack(self.xiAll[jjj])
-            self.etaAll[jjj] = np.hstack(self.etaAll[jjj])
-
-            self.plateIDAll[jjj]   = np.hstack(self.plateIDAll[jjj])
-            self.indicesAll[jjj]   = np.hstack(self.indicesAll[jjj])
-            self.tAll[jjj]         = np.hstack(self.tAll[jjj])
-            self.rootnamesAll[jjj] = np.hstack(self.rootnamesAll[jjj])
-
-            self.dxAll[jjj]   = np.hstack(self.dxAll[jjj])
-            self.dyAll[jjj]   = np.hstack(self.dyAll[jjj])
-            self.rollAll[jjj] = np.hstack(self.rollAll[jjj])
-
-            if (len(self.XpAll_A[jjj]) > 0):
-                XAll_A[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_A[jjj], format='csr'), sparse.vstack(self.XkpAll_A[jjj])])
+                pool.join()
             else:
-                XAll_A[jjj] = sparse.vstack(self.XkpAll_A[jjj])
+                for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
+                    self._processFile(i, hst1passFile, imageFilename)
 
-            if (len(self.XpAll_B[jjj]) > 0):
-                XAll_B[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_B[jjj], format='csr'), sparse.vstack(self.XkpAll_B[jjj])])
-            else:
-                XAll_B[jjj] = sparse.vstack(self.XkpAll_B[jjj])
+            print()
+            print("NUMBER OF SELECTED FILES:", self.nOkay)
 
-            self.xyRawAll[jjj] = np.vstack(self.xyRawAll[jjj])
+            self.okayIDs = np.array(self.okayIDs)
 
-            self.matchResAll[jjj] = np.vstack(self.matchResAll[jjj])
+            self.nDataImages = np.array(self.nDataImages)
 
-            self.XpAll_A[jjj]  = None
-            self.XpAll_B[jjj]  = None
-            self.XkpAll_A[jjj] = None
-            self.XkpAll_B[jjj] = None
+            self.rootnames = np.array(self.rootnames)
+            self.XtAll     = np.vstack(self.XtAll)
+            self.tObs      = np.array(self.tObs)
 
-        del self.XpAll_A
-        del self.XkpAll_A
-        del self.XpAll_B
-        del self.XkpAll_B
-        gc.collect()
+            gc.set_threshold(2, 1, 1)
 
-        elapsedTime = time.time() - startTime
-        print("READING DATA AND BUILDING MODEL DONE! Elapsed time:", convertTime(elapsedTime))
-
-        if makePlots:
-            xSize1 = 12
-            ySize1 = 0.25 * xSize1
-
-            xMin, xMax = np.inf, -np.inf
-            yMin, yMax = 0.0, 1.1
-
-            dY, dMY = 0.5, 0.1
-
-            xLabel2 = r'Time [yr]'
-
-            ## This is the grid of plotting points
-            nPointsGrid = 1001
-
-            tPlot = np.linspace(self.tMin - self.kOrder * self.dtKnot, self.tMax + self.kOrder * self.dtKnot,
-                                nPointsGrid, endpoint=True)
-
-            nSplines = self.tKnot.size + self.kOrder - 1
-            tKnotSpl = np.linspace(self.tKnot[0] - self.kOrder * self.dtKnot, self.tKnot[-1] + self.kOrder * self.dtKnot,
-                                   self.nKnots + 2 * self.kOrder, endpoint=True)
-
-            xMin = min(xMin, self.tMin - self.kOrder * self.dtKnot - 0.25 * self.dtKnot)
-            xMax = max(xMax, self.tMax + self.kOrder * self.dtKnot + 0.25 * self.dtKnot)
-
-            nonZeroSplines = []
-            BSplines = []
-
-            prop_cycle = plt.rcParams['axes.prop_cycle']
-            colors = prop_cycle.by_key()['color']
-
-            knotColors = ['#b2df8a', '#a6cee3']
-
-            fig1 = plt.figure(figsize=(xSize1, ySize1))
-
-            ax1 = fig1.add_subplot(111)
-
-            ## for knot in range(-kOrder, tT.size - 2 * kOrder - 1):
-            for ii in range(nSplines):
-                b = interpolate.BSpline.basis_element(tKnotSpl[ii:ii + self.kOrder + 2], extrapolate=False)
-
-                BSpline = b(tPlot)
-
-                nonZero = BSpline > 0
-
-                color = colors[ii % len(colors)]
-
-                ax1.plot(tPlot[nonZero], BSpline[nonZero], '-', color=color)
-
-                nonZeroSplines.append(nonZero)
-                BSplines.append(BSpline)
-
-            for ii in range(1, self.XtAll.shape[1]):
-                nonZero = self.XtAll[:, ii] > 0
-
-                color = colors[(ii - 1) % len(colors)]
-
-                ax1.plot(self.tObs[nonZero], self.XtAll[nonZero, ii], '.', color=color, rasterized=True)
-
-            for ii in range(self.tKnot.size):
-                ax1.axvline(self.tKnot[ii], linewidth=1, linestyle='-', color=knotColors[0])
-
-            ax1.set_xlim(xMin, xMax)
-            ax1.xaxis.set_major_locator(AutoLocator())
-            ax1.xaxis.set_minor_locator(AutoMinorLocator())
-
-            ax1.set_ylim(yMin, yMax)
-            ax1.yaxis.set_major_locator(MultipleLocator(dY))
-            ax1.yaxis.set_minor_locator(MultipleLocator(dMY))
-
-            ax1.set_xlabel(xLabel2);
-            ax1.set_ylabel(r'$B_{i,k}(t)$');
-
-            plotFilename1 = "{0:s}/plot_BSplines_vs_time_kOrder{1:d}.pdf".format(outDir, self.kOrder)
-
-            fig1.savefig(plotFilename1, bbox_inches='tight')
-
-            print("B-Spline plot saved to {0:s}".format(plotFilename1))
-
-            plt.close(fig=fig1)
-
-        self.nImages = self.nOkay
-
-        print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
-
-        P_A = self.nImages * self.nParsIndiv_A + self.nParsK * self.nParsSpline_A
-        P_B = self.nImages * self.nParsIndiv_B + self.nParsK * self.nParsSpline_B
-
-        print("P_A = {0:d}".format(P_A))
-        print("P_B = {0:d}".format(P_B))
-        print("N =", self.nDataAll)
-
-        scalerArrayAll_A = np.zeros(P_A)
-        scalerArrayAll_B = np.zeros(P_B)
-
-        if (self.nParsIndiv_A > 0):
-            scalerArrayAll_A[:self.nImages * self.nParsIndiv_A]  = np.tile(self.scalerArray[self.indivParsIndices_A], self.nImages)
-        scalerArrayAll_A[self.nImages  * self.nParsIndiv_A:] = np.repeat(self.scalerArray[self.splineParsIndices_A], self.nParsK)
-
-        if (self.nParsIndiv_B > 0):
-            scalerArrayAll_B[:self.nImages * self.nParsIndiv_B]  = np.tile(self.scalerArray[self.indivParsIndices_B], self.nImages)
-        scalerArrayAll_B[self.nImages  * self.nParsIndiv_B:] = np.repeat(self.scalerArray[self.splineParsIndices_B], self.nParsK)
-
-        N_ITER_OUTER = 10
-        N_ITER_INNER = 100
-
-        markerSize = 0.1
-
-        ## Plotting detected sources
-        xSize1 = 12
-        ySize1 = xSize1
-
-        nRows = 2
-        nCols = 1
-
-        cMap = 'Greys'
-
-        dX, dMX = 1000, 200
-        dY, dMY = 500, 100
-
-        xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
-
-        ## Plotting residuals
-        xSize2 = 12
-        ySize2 = 0.5 * xSize2
-
-        nRows2 = 2
-        nCols2 = 2
-
-        retainedColor = 'k'
-        nonFullColor = '#fc8d59'  ## Orange
-        discardedColor = 'r'
-
-        indivDataFilenames   = []
-        modelCoeffsFilenames = []
-        outTableFilenames    = []
-
-        startTimeAll = time.time()
-        for chip in chips:
-            chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1])
-
-            indivDataFilename = '{0:s}/individualCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
-                outDir, chip, self.tMin, self.tMax)
-
-            modelCoeffsFilename = '{0:s}/splineCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
-                outDir, chip, self.tMin, self.tMax)
-
-            outTableFilename = "{0:s}/resids_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_FINAL.csv".format(outDir,
-                                                                                                             chip,
-                                                                                                             self.pOrder,
-                                                                                                             self.kOrder,
-                                                                                                             self.nKnots)
-
-            if ((not os.path.exists(indivDataFilename)) or (not os.path.exists(modelCoeffsFilename))
-                    or (not os.path.exists(outTableFilename))):
+            for chip in chips:
                 jjj = chip - 1
+
+                self.xiAll[jjj] = np.hstack(self.xiAll[jjj])
+                self.etaAll[jjj] = np.hstack(self.etaAll[jjj])
+
+                self.plateIDAll[jjj]   = np.hstack(self.plateIDAll[jjj])
+                self.indicesAll[jjj]   = np.hstack(self.indicesAll[jjj])
+                self.tAll[jjj]         = np.hstack(self.tAll[jjj])
+                self.rootnamesAll[jjj] = np.hstack(self.rootnamesAll[jjj])
+
+                self.dxAll[jjj]   = np.hstack(self.dxAll[jjj])
+                self.dyAll[jjj]   = np.hstack(self.dyAll[jjj])
+                self.rollAll[jjj] = np.hstack(self.rollAll[jjj])
+
+                if (len(self.XpAll_A[jjj]) > 0):
+                    XAll_A[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_A[jjj], format='csr'), sparse.vstack(self.XkpAll_A[jjj])])
+                else:
+                    XAll_A[jjj] = sparse.vstack(self.XkpAll_A[jjj])
+
+                if (len(self.XpAll_B[jjj]) > 0):
+                    XAll_B[jjj] = sparse.hstack([sparse.block_diag(self.XpAll_B[jjj], format='csr'), sparse.vstack(self.XkpAll_B[jjj])])
+                else:
+                    XAll_B[jjj] = sparse.vstack(self.XkpAll_B[jjj])
+
+                self.xyRawAll[jjj] = np.vstack(self.xyRawAll[jjj])
+
+                self.matchResAll[jjj] = np.vstack(self.matchResAll[jjj])
+
+                self.XpAll_A[jjj]  = None
+                self.XpAll_B[jjj]  = None
+                self.XkpAll_A[jjj] = None
+                self.XkpAll_B[jjj] = None
+
+            del self.XpAll_A
+            del self.XkpAll_A
+            del self.XpAll_B
+            del self.XkpAll_B
+            gc.collect()
+
+            elapsedTime = time.time() - startTime
+            print("READING DATA AND BUILDING MODEL DONE! Elapsed time:", convertTime(elapsedTime))
+
+            if makePlots:
+                xSize1 = 12
+                ySize1 = 0.25 * xSize1
+
+                xMin, xMax = np.inf, -np.inf
+                yMin, yMax = 0.0, 1.1
+
+                dY, dMY = 0.5, 0.1
+
+                xLabel2 = r'Time [yr]'
+
+                ## This is the grid of plotting points
+                nPointsGrid = 1001
+
+                tPlot = np.linspace(self.tMin - self.kOrder * self.dtKnot, self.tMax + self.kOrder * self.dtKnot,
+                                    nPointsGrid, endpoint=True)
+
+                nSplines = self.tKnot.size + self.kOrder - 1
+                tKnotSpl = np.linspace(self.tKnot[0] - self.kOrder * self.dtKnot, self.tKnot[-1] + self.kOrder * self.dtKnot,
+                                       self.nKnots + 2 * self.kOrder, endpoint=True)
+
+                xMin = min(xMin, self.tMin - self.kOrder * self.dtKnot - 0.25 * self.dtKnot)
+                xMax = max(xMax, self.tMax + self.kOrder * self.dtKnot + 0.25 * self.dtKnot)
+
+                nonZeroSplines = []
+                BSplines = []
+
+                prop_cycle = plt.rcParams['axes.prop_cycle']
+                colors = prop_cycle.by_key()['color']
+
+                knotColors = ['#b2df8a', '#a6cee3']
+
+                fig1 = plt.figure(figsize=(xSize1, ySize1))
+
+                ax1 = fig1.add_subplot(111)
+
+                ## for knot in range(-kOrder, tT.size - 2 * kOrder - 1):
+                for ii in range(nSplines):
+                    b = interpolate.BSpline.basis_element(tKnotSpl[ii:ii + self.kOrder + 2], extrapolate=False)
+
+                    BSpline = b(tPlot)
+
+                    nonZero = BSpline > 0
+
+                    color = colors[ii % len(colors)]
+
+                    ax1.plot(tPlot[nonZero], BSpline[nonZero], '-', color=color)
+
+                    nonZeroSplines.append(nonZero)
+                    BSplines.append(BSpline)
+
+                for ii in range(1, self.XtAll.shape[1]):
+                    nonZero = self.XtAll[:, ii] > 0
+
+                    color = colors[(ii - 1) % len(colors)]
+
+                    ax1.plot(self.tObs[nonZero], self.XtAll[nonZero, ii], '.', color=color, rasterized=True)
+
+                for ii in range(self.tKnot.size):
+                    ax1.axvline(self.tKnot[ii], linewidth=1, linestyle='-', color=knotColors[0])
+
+                ax1.set_xlim(xMin, xMax)
+                ax1.xaxis.set_major_locator(AutoLocator())
+                ax1.xaxis.set_minor_locator(AutoMinorLocator())
+
+                ax1.set_ylim(yMin, yMax)
+                ax1.yaxis.set_major_locator(MultipleLocator(dY))
+                ax1.yaxis.set_minor_locator(MultipleLocator(dMY))
+
+                ax1.set_xlabel(xLabel2);
+                ax1.set_ylabel(r'$B_{i,k}(t)$');
+
+                plotFilename1 = "{0:s}/plot_BSplines_vs_time_kOrder{1:d}.pdf".format(outDir, self.kOrder)
+
+                fig1.savefig(plotFilename1, bbox_inches='tight')
+
+                print("B-Spline plot saved to {0:s}".format(plotFilename1))
+
+                plt.close(fig=fig1)
+
+            self.nImages = self.nOkay
+
+            print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
+
+            P_A = self.nImages * self.nParsIndiv_A + self.nParsK * self.nParsSpline_A
+            P_B = self.nImages * self.nParsIndiv_B + self.nParsK * self.nParsSpline_B
+
+            print("P_A = {0:d}".format(P_A))
+            print("P_B = {0:d}".format(P_B))
+            print("N =", self.nDataAll)
+
+            scalerArrayAll_A = np.zeros(P_A)
+            scalerArrayAll_B = np.zeros(P_B)
+
+            if (self.nParsIndiv_A > 0):
+                scalerArrayAll_A[:self.nImages * self.nParsIndiv_A]  = np.tile(self.scalerArray[self.indivParsIndices_A], self.nImages)
+            scalerArrayAll_A[self.nImages  * self.nParsIndiv_A:] = np.repeat(self.scalerArray[self.splineParsIndices_A], self.nParsK)
+
+            if (self.nParsIndiv_B > 0):
+                scalerArrayAll_B[:self.nImages * self.nParsIndiv_B]  = np.tile(self.scalerArray[self.indivParsIndices_B], self.nImages)
+            scalerArrayAll_B[self.nImages  * self.nParsIndiv_B:] = np.repeat(self.scalerArray[self.splineParsIndices_B], self.nParsK)
+
+            N_ITER_OUTER = 10
+            N_ITER_INNER = 100
+
+            markerSize = 0.1
+
+            ## Plotting detected sources
+            xSize1 = 12
+            ySize1 = xSize1
+
+            nRows = 2
+            nCols = 1
+
+            cMap = 'Greys'
+
+            dX, dMX = 1000, 200
+            dY, dMY = 500, 100
+
+            xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
+
+            ## Plotting residuals
+            xSize2 = 12
+            ySize2 = 0.5 * xSize2
+
+            nRows2 = 2
+            nCols2 = 2
+
+            retainedColor = 'k'
+            nonFullColor = '#fc8d59'  ## Orange
+            discardedColor = 'r'
+
+            for chip in chips:
+                chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1])
+
+                jjj = chip - 1
+
+                indivDataFilename   = indivDataFilenames[jjj]
+                modelCoeffsFilename = modelCoeffsFilenames[jjj]
+                outTableFilename    = outTableFilenames[jjj]
 
                 if (self.individualZP or (chip == 1)):
                     dxs   = [self.dxAll[jjj]]
@@ -1753,10 +1772,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 print("Residual table written to {0:s}".format(outTableFilename))
 
-            indivDataFilenames.append(indivDataFilename)
-            modelCoeffsFilenames.append(modelCoeffsFilename)
-            outTableFilenames.append(outTableFilename)
-
         print("APPLYING TIME-DEPENDENT COEFFICIENTS TO SELECTED HST1PASS FILES...")
         fitResultsFilename = '{0:s}/fitResults_pOrder{1:d}_kOrder{2:d}.txt'.format(outDir, self.pOrder, self.kOrder)
 
@@ -2090,11 +2105,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 textResults += " {0:0.12e}".format(coeffB)
                             textResults += "\n"
 
-                            print("RESIDUALS FOR {0:s}".format(chipTitle))
-                            print(hst1pass.to_pandas().loc[selection, ['resXi', 'resEta']].describe())
+                            ## print("RESIDUALS FOR {0:s}".format(chipTitle))
+                            ## print(hst1pass.to_pandas().loc[selection, ['resXi', 'resEta']].describe())
 
                             elapsedTime = time.time() - startTime
-                            print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
+                            print("FITTING DONE FOR {0:s},".format(chipTitle), "elapsed time:", convertTime(elapsedTime), end='. ')
 
                         fitResultsText.append(textResults)
 
@@ -2189,12 +2204,18 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             ax3[0, 2].set_visible(False)
                             ax3[1, 2].set_visible(False)
 
-                            print("FINAL RESIDUALS (COMBINED):")
+                            ## print("FINAL RESIDUALS (COMBINED):")
                             df_resids = hst1pass.to_pandas()
+
+                            xi0  = float(self.wcsRef.to_header()['CRPIX1'])
+                            eta0 = float(self.wcsRef.to_header()['CRPIX2'])
+
+                            df_resids['xi']  = xi0 - df_resids['xi']
+                            df_resids['eta'] = df_resids['eta'] - eta0
 
                             selection = (df_resids['refCatIndex'] >= 0) & df_resids['retained']
 
-                            print(df_resids.loc[selection, ['resXi', 'resEta']].describe())
+                            ## print(df_resids.loc[selection, ['resXi', 'resEta']].describe())
 
                             sns.scatterplot(data=df_resids[selection], x='resXi', y='resEta', hue='weights', legend=False,
                                             ax=ax3[1, 1],
