@@ -1,3 +1,5 @@
+import os
+
 from acsgeodist.tools import sip
 from acsgeodist import acsconstants
 import pandas as pd
@@ -22,3 +24,10 @@ def readFitResults(fitResultsFilename, pOrder):
         return pd.concat(df_fitResults)
     else:
         return pd.read_csv(fitResultsFilename, sep='\s+', header=None, comment='#', names=columns)
+
+def readHST1PassFile(hst1passFilename):
+    split = os.path.splitext(hst1passFilename)
+
+    columns = list(split[-1].replace(".", ""))
+
+    return pd.read_csv(hst1passFilename, sep='\\s+', header=None, comment='#', names=columns)
