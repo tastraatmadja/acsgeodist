@@ -1,5 +1,7 @@
 from astropy.coordinates import SkyCoord
 from astropy import units as u
+from astropy import wcs
+from matplotlib import path as mpltPath
 import numpy as np
 
 '''
@@ -106,3 +108,24 @@ def getRectangleMidpoint(coords):
     midpoint1 = 0.5 * (coords + np.roll(coords, -1, axis=0))
     midpoint2 = 0.5 * (midpoint1 + np.roll(midpoint1, -2, axis=0))
     return midpoint2[0]
+
+def calculateFootprintAndIfPointsAreInside(wcsIn, wcsOut, points=None, undistort=True, center=True):
+    naxis1, naxis2 = wcsIn.pixel_shape
+
+    if center:
+        corners = np.array([[1, 1], [1, naxis2], [naxis1, naxis2], [naxis1, 1]], dtype=np.float64)
+    else:
+        corners = np.array([[0.5, 0.5], [0.5, naxis2 + 0.5], [naxis1 + 0.5, naxis2 + 0.5], [naxis1 + 0.5, 0.5]],
+                           dtype=np.float64)
+
+    corners -= 1
+
+    corners_out = np.array(wcs.utils.pixel_to_pixel(wcsIn, wcsOut, corners[:,0], corners[:,1])).T
+
+    if points is not None:
+        path = mpltPath.Path(corners_out)
+        in_footprint = path.contains_points(points)
+    else:
+        in_footprint = None
+
+    return np.vstack([corners_out, corners_out[0]]), in_footprint
