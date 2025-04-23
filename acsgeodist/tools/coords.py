@@ -118,7 +118,7 @@ def calculateFootprintAndIfPointsAreInside(wcsIn, wcsOut, points=None, undistort
         corners = np.array([[0.5, 0.5], [0.5, naxis2 + 0.5], [naxis1 + 0.5, naxis2 + 0.5], [naxis1 + 0.5, 0.5]],
                            dtype=np.float64)
 
-    corners -= 1
+    corners -= 1 ## Subtract by one because pixel to pixel calculation has origin = 0
 
     corners_out = np.array(wcs.utils.pixel_to_pixel(wcsIn, wcsOut, corners[:,0], corners[:,1])).T
 
