@@ -663,7 +663,7 @@ class WCSAlignment:
 
 
     def _writeErrorMessage(self, filename, errorMessage):
-        f = open(filename, 'w')
+        f = open(filename, 'a')
         f.write(errorMessage+ "\n")
         f.close()
 
