@@ -409,10 +409,11 @@ class WCSAlignment:
                                 ## Select stars with zero weights
                                 rejected = weights <= 0
 
-                                print(rootname, ver, self.pOrder, iteration + 1,
-                                      "N_STARS: {0:d}/{1:d}".format(xPred[~rejected].size, (xPred.size)),
-                                      "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta),
-                                      "W_SUM: {0:0.6f}".format(weightSum))
+                                if ((iteration == 0) or (((iteration + 1) % 10) == 0)):
+                                    print(rootname, ver, self.pOrder, iteration + 1,
+                                          "N_STARS: {0:d}/{1:d}".format(xPred[~rejected].size, (xPred.size)),
+                                          "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta),
+                                          "W_SUM: {0:0.6f}".format(weightSum))
 
                                 if (weightSumDiff < 1.e-9):
                                     break
