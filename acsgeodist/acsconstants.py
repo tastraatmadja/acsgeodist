@@ -19,4 +19,6 @@ WFC_COLORS = ['#1f78b4', '#33a02c']
 
 CHIP_POSITIONS = ['bottom', 'top']
 
+N_CHIPS = len(WFC)
+
 CHIP_LABEL = lambda wfc, pos : '{0:s} ({1:s})'.format(wfc, pos)
