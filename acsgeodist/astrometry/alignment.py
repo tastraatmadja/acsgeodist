@@ -19,6 +19,7 @@ from sklearn.neighbors import KDTree
 from acsgeodist import acsconstants
 from acsgeodist.tools import coords, corr, plotting, reader, sip, stat
 from acsgeodist.tools.time import convertTime
+
 class WCSAlignment:
     ## The grid of bins for the 2d histogram image
     delX = 1.0
@@ -108,6 +109,7 @@ class WCSAlignment:
         # Initial match is then performed. We then use the stars in these initial match to derive an improved linear
         # transformation and performed the cross-matching the second time.
         for hst1passFilename, imageFilename in zip(hst1passFilenames, imageFilenames):
+            print(os.path.basename(hst1passFilename), os.path.basename(imageFilename))
             df_hst1pass = reader.readHST1PassFile(hst1passFilename)
 
             hduList = fits.open(imageFilename)
@@ -636,6 +638,27 @@ class WCSAlignment:
                     df_hst1pass.drop(columns=['x_im', 'y_im']).to_csv(outTableFilename)
 
                     print("CSV table written to", outTableFilename)
+
+                else:
+                    print("NO MATCHES FOUND! File skipped...")
+
+                    self._writeErrorMessage(errTableFilename, "NO MATCHES FOUND. N_REFCAT = {0:d}\n".format(nRefCat))
+
+                del df_hst1pass
+                del hduList
+                gc.collect()
+
+                elapsedTime0 = time.time() - startTime0
+                print("IMAGE DONE! Elapsed time:", convertTime(elapsedTime0))
+
+            else:
+                if os.path.exists(outTableFilename):
+                    print("File not processed because output table has been found:", outTableFilename)
+                if os.path.exists(errTableFilename):
+                    print("File not processed because an error was found in the previous run:", errTableFilename)
+
+
+        print("ALL DONE!")
 
 
     def _writeErrorMessage(self, filename, errorMessage):
