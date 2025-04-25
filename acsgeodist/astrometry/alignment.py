@@ -648,7 +648,7 @@ class WCSAlignment:
                     print("NO MATCHES FOUND! File skipped...")
 
                     self._writeErrorMessage(errTableFilename,
-                                            rootname+": ALL CHIPS: NO MATCHES FOUND. N_REFCAT = {0:d}\n".format(nRefCat))
+                                            rootname+" ALL CHIPS: NO MATCHES FOUND. N_REFCAT = {0:d}".format(nRefCat))
 
                 del df_hst1pass
                 del hduList
