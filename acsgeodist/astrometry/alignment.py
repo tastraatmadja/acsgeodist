@@ -523,7 +523,7 @@ class WCSAlignment:
                             del selection
                             gc.collect()
                         else:
-                            errMessage = "SOMETHING FISHY IS GOING ON... UNABLE TO FIND SHIFT USING PHASE CORRELATION"
+                            errMessage = title+": SOMETHING FISHY IS GOING ON... UNABLE TO FIND SHIFT USING PHASE CORRELATION"
                             print(errMessage)
 
                             self._writeErrorMessage(errTableFilename, errMessage)
@@ -544,13 +544,13 @@ class WCSAlignment:
                             gc.collect()
                     else:
                         if (nSelection <= self.min_n_good_sources):
-                            errMessage = "NOT ENOUGH DETECTED STARS WITH FIT QUALITY Q < {0:0.2f}: {1:d} (MIN: {2:d})".format(
+                            errMessage = title+": NOT ENOUGH DETECTED STARS WITH FIT QUALITY Q < {0:0.2f}: {1:d} (MIN: {2:d})".format(
                                 self.qMax, nSelection, self.min_n_good_sources)
                             print(errMessage)
                             self._writeErrorMessage(errTableFilename, errMessage)
 
                         if (nRefStarsFootprint <= 0):
-                            errMessage = "NO REFERENCE STARS FOUND! FOOTPRINT IS OUTSIDE THE RANGE OF EXTERNAL CATALOGUE!"
+                            errMessage = title+": NO REFERENCE STARS FOUND! FOOTPRINT IS OUTSIDE THE RANGE OF EXTERNAL CATALOGUE!"
                             print(errMessage)
                             self._writeErrorMessage(errTableFilename, errMessage)
 
@@ -640,14 +640,15 @@ class WCSAlignment:
 
                     self._plotMatchResidualsXY(xyMatches, residuals, plotFilename2, rootname)
 
-                    df_hst1pass.drop(columns=['x_im', 'y_im']).to_csv(outTableFilename)
+                    df_hst1pass.drop(columns=['x_im', 'y_im']).to_csv(outTableFilename, index=False)
 
                     print("CSV table written to", outTableFilename)
 
                 else:
                     print("NO MATCHES FOUND! File skipped...")
 
-                    self._writeErrorMessage(errTableFilename, "NO MATCHES FOUND. N_REFCAT = {0:d}\n".format(nRefCat))
+                    self._writeErrorMessage(errTableFilename,
+                                            rootname+": ALL CHIPS: NO MATCHES FOUND. N_REFCAT = {0:d}\n".format(nRefCat))
 
                 del df_hst1pass
                 del hduList
