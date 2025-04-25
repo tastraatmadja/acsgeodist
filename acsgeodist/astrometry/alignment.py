@@ -168,9 +168,7 @@ class WCSAlignment:
 
                 plt.subplots_adjust(wspace=0.0, hspace=0.15)
 
-                plotFilename2 = "{0:s}/plot_{1:s}_phaseCorrelation.pdf".format(outDir, rootname)
-
-                pp1 = PdfPages(plotFilename2)
+                phaseCorrelationFigures = []
 
                 for jj in range(acsconstants.N_CHIPS):
                     startTime = time.time()
@@ -317,11 +315,8 @@ class WCSAlignment:
 
                             axCommons2.set_title(title);
 
-                            pp1.savefig(fig2, bbox_inches='tight', dpi=300)
+                            phaseCorrelationFigures.append(fig2)
 
-                            plt.close(fig=fig2)
-
-                            del fig2
                             del corrIm
                             gc.collect()
 
@@ -571,9 +566,18 @@ class WCSAlignment:
                     elapsedTime = time.time() - startTime
                     print("CHIP DONE! Elapsed time:", convertTime(elapsedTime))
 
-                pp1.close()
+                if (len(phaseCorrelationFigures) > 0):
+                    plotFilename2 = "{0:s}/plot_{1:s}_phaseCorrelation.pdf".format(outDir, rootname)
 
-                print("Phase correlation plot saved to {0:s}".format(plotFilename2))
+                    pp1 = PdfPages(plotFilename2)
+
+                    for fig2 in phaseCorrelationFigures:
+                        pp1.savefig(fig2, bbox_inches='tight', dpi=300)
+                        plt.close(fig=fig2)
+
+                    pp1.close()
+
+                    print("Phase correlation plot saved to {0:s}".format(plotFilename2))
 
                 if (self.refImage is not None):
                     plotFilename1 = "{0:s}/plot_{1:s}_footprint.pdf".format(outDir, rootname)
