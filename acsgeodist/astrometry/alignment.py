@@ -50,7 +50,7 @@ class WCSAlignment:
 
     markerSize1 = 1
     lineWidth1 = 2
-    zorder1 = 2
+    zorder1 = 5
 
     refStarColor    = '#ca0020'  ## RED
     nonRefStarColor = '#0571b0'  ## BLUE
@@ -133,6 +133,7 @@ class WCSAlignment:
                 self.df_refCat['yt'] = self.df_refCat['y'] + self.df_refCat['pm_y'] * dt
 
                 self.df_refCat['in_footprint'] = False
+                self.df_refCat['hasSource']    = False
 
                 ## Create new columns with default values
                 df_hst1pass['hasRefCat'] = False
@@ -145,23 +146,23 @@ class WCSAlignment:
 
                 coeffs = np.zeros((acsconstants.N_CHIPS, 2 * self.P))
 
+                fig1 = plt.figure(figsize=(WCSAlignment.xSize1, WCSAlignment.ySize1))
+
+                ax1 = fig1.add_subplot(111, projection=self.wcsRef)
+                ## ax1 = fig1.add_subplot(111)
+
+                ax1.set_aspect('equal')
+
+                ax1.set_xlabel(r'$\alpha$ [hms]')
+                ax1.set_ylabel(r'$\delta$ [$^\circ$]')
+
+                ax1.set_title(rootname + ' --- ' + t_acs.iso);
+
                 if (self.refImage is not None):
                     vmin, vmax = 0, np.percentile(self.refImage[self.refImage > 0], 97)
 
-                    fig1 = plt.figure(figsize=(WCSAlignment.xSize1, WCSAlignment.ySize1))
-
-                    ax1 = fig1.add_subplot(111, projection=self.wcsRef)
-
-                    ax1.set_aspect('equal')
-
                     ax1.imshow(self.refImage, cmap=WCSAlignment.cMap0, vmin=vmin, vmax=vmax, origin='lower')
 
-                    ax1.plot(self.df_refCat['xt'], self.df_refCat['yt'], 'r.', markersize=1, alpha=0.5)
-
-                    ax1.set_xlabel(r'$\alpha$ [hms]')
-                    ax1.set_ylabel(r'$\delta$ [$^\circ$]')
-
-                    ax1.set_title(rootname + ' --- ' + t_acs.iso);
 
                 fig0, axes0 = plt.subplots(figsize=(WCSAlignment.xSize0, WCSAlignment.ySize0),
                                            nrows=WCSAlignment.nRows0, ncols=WCSAlignment.nCols0, rasterized=True)
@@ -215,29 +216,28 @@ class WCSAlignment:
 
                     self.df_refCat.loc[in_footprint, ['in_footprint']] = True
 
-                    if (self.refImage is not None):
-                        ax1.plot(footprint[:, 0], footprint[:, 1], '-', color=acsconstants.WFC_COLORS[jj],
-                             linewidth=WCSAlignment.lineWidth1, zorder=WCSAlignment.zorder1, label=chipLabel)
+                    ax1.plot(footprint[:, 0], footprint[:, 1], '-', color=acsconstants.WFC_COLORS[jj],
+                         linewidth=WCSAlignment.lineWidth1, zorder=WCSAlignment.zorder1, label=chipLabel)
 
-                        chipMidPoint = coords.getRectangleMidpoint(footprint)
+                    chipMidPoint = coords.getRectangleMidpoint(footprint)
 
-                        ax1.text(chipMidPoint[0], chipMidPoint[1], chipLabel, color=acsconstants.WFC_COLORS[jj],
-                                 ha='center', va='center')
+                    ax1.text(chipMidPoint[0], chipMidPoint[1], chipLabel, color=acsconstants.WFC_COLORS[jj],
+                             ha='center', va='center', zorder=WCSAlignment.zorder1)
 
-                        if (acsconstants.CHIP_POSITIONS[jj] == 'bottom'):
-                            originPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 0, 0))
-                            xAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 4096, 0))
-                            yAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 0, 2048))
+                    if (acsconstants.CHIP_POSITIONS[jj] == 'bottom'):
+                        originPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 0, 0))
+                        xAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 4096, 0))
+                        yAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 0, 2048))
 
-                            xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
-                            yAxisPixRef = originPixRef + 2.5 * (yAxisPixRef - originPixRef)
+                        xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
+                        yAxisPixRef = originPixRef + 2.5 * (yAxisPixRef - originPixRef)
 
-                            ax1.annotate(r'$x$', color='r', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
-                                         textcoords='data', ha='center', va='center',
-                                         arrowprops=dict(arrowstyle="<-", color="r"), zorder=3)
-                            ax1.annotate(r'$y$', color='r', xy=originPixRef, xycoords='data', xytext=yAxisPixRef,
-                                         textcoords='data', ha='center', va='center',
-                                         arrowprops=dict(arrowstyle="<-", color="r"), zorder=3)
+                        ax1.annotate(r'$x$', color='r', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
+                                     textcoords='data', ha='center', va='center',
+                                     arrowprops=dict(arrowstyle="<-", color="r"), zorder=WCSAlignment.zorder1+1)
+                        ax1.annotate(r'$y$', color='r', xy=originPixRef, xycoords='data', xytext=yAxisPixRef,
+                                     textcoords='data', ha='center', va='center',
+                                     arrowprops=dict(arrowstyle="<-", color="r"), zorder=WCSAlignment.zorder1+1)
 
                     selection  = (df_hst1pass['k'] == k) & (df_hst1pass['q'] > 0) & (df_hst1pass['q'] <= self.qMax)
                     nSelection = len(selection[selection])
@@ -471,13 +471,14 @@ class WCSAlignment:
                             refCatID[~hasRefCat] = -1
                             idx[~hasRefCat] = -1
 
+                            self.df_refCat.loc[idx[hasRefCat], 'hasSource'] = True
+
                             print("REFINED_MATCH: {0:d} out of {1:d} sources".format(hasRefCat[hasRefCat].size,
                                                                                      hasRefCat.size))
 
-                            if (self.refImage is not None):
-                                ax1.plot(x_ref[idx[hasRefCat]], y_ref[idx[hasRefCat]], '.',
-                                         markersize=WCSAlignment.markerSize1, color=acsconstants.WFC_COLORS[jj],
-                                         alpha=0.5)
+                            ax1.plot(x_ref[idx[hasRefCat]], y_ref[idx[hasRefCat]], '.',
+                                     markersize=WCSAlignment.markerSize1, color=acsconstants.WFC_COLORS[jj],
+                                     alpha=0.5)
 
                             ## Append new columns to the df_hst1pass results
                             df_hst1pass.loc[selection, ['hasRefCat']] = deepcopy(hasRefCat)
@@ -493,7 +494,7 @@ class WCSAlignment:
 
                             selection = (df_hst1pass['k'] == k) & (~df_hst1pass['hasRefCat'])
 
-                            xyPos = df_hst1pass[selection][['X', 'Y']].values
+                            xyPos = df_hst1pass.loc[selection, ['X', 'Y']].values
                             xyPos[:, 1] -= yzp
 
                             apertures = CircularAperture(xyPos, r=20.0)
@@ -502,7 +503,7 @@ class WCSAlignment:
 
                             selection = (df_hst1pass['k'] == k) & df_hst1pass['hasRefCat']
 
-                            xyPos = df_hst1pass[selection][['X', 'Y']].values
+                            xyPos = df_hst1pass.loc[selection, ['X', 'Y']].values
                             xyPos[:, 1] -= yzp
 
                             apertures = CircularAperture(xyPos, r=20.0)
@@ -530,7 +531,7 @@ class WCSAlignment:
 
                             selection = (df_hst1pass['k'] == k)
 
-                            xyPos = df_hst1pass[selection][['X', 'Y']].values
+                            xyPos = df_hst1pass.loc[selection, ['X', 'Y']].values
                             xyPos[:, 1] -= yzp
 
                             apertures = CircularAperture(xyPos, r=20.0)
@@ -556,7 +557,7 @@ class WCSAlignment:
 
                         selection = (df_hst1pass['k'] == k)
 
-                        xyPos = df_hst1pass[selection][['X', 'Y']].values
+                        xyPos = df_hst1pass.loc[selection, ['X', 'Y']].values
                         xyPos[:, 1] -= yzp
 
                         apertures = CircularAperture(xyPos, r=20.0)
@@ -579,16 +580,19 @@ class WCSAlignment:
 
                     print("Phase correlation plot saved to {0:s}".format(plotFilename2))
 
-                if (self.refImage is not None):
-                    plotFilename1 = "{0:s}/plot_{1:s}_footprint.pdf".format(outDir, rootname)
+                ax1.plot(self.df_refCat.loc[~self.df_refCat['hasSource'], 'xt'],
+                         self.df_refCat.loc[~self.df_refCat['hasSource'], 'yt'], '.', markersize=1, alpha=0.5,
+                         color='#fc8d62', zorder=1)
 
-                    fig1.savefig(plotFilename1, bbox_inches='tight', dpi=300)
+                plotFilename1 = "{0:s}/plot_{1:s}_footprint.pdf".format(outDir, rootname)
 
-                    print("Footprint image saved to {0:s}".format(plotFilename1))
+                fig1.savefig(plotFilename1, bbox_inches='tight', dpi=300)
 
-                    plt.close(fig=fig1)
+                print("Footprint image saved to {0:s}".format(plotFilename1))
 
-                    del fig1
+                plt.close(fig=fig1)
+
+                del fig1
 
                 axCommons = plotting.drawCommonLabel(WCSAlignment.xLabel0, WCSAlignment.yLabel0, fig0, xPad=20, yPad=15)
 
