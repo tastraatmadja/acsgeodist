@@ -65,9 +65,9 @@ class WCSAlignment:
         if (refImage is not None):
             self.refImage = deepcopy(refImage)
 
-        self.n_image_stars = 1000
-        self.n_ref_stars = 1000
-        self.in_footprint = in_footprint
+        self.n_image_stars = n_image_stars
+        self.n_ref_stars   = n_ref_stars
+        self.in_footprint  = in_footprint
 
         self.qMax = qMax
         self.min_n_good_sources = min_n_good_sources
@@ -148,8 +148,8 @@ class WCSAlignment:
 
                 fig1 = plt.figure(figsize=(WCSAlignment.xSize1, WCSAlignment.ySize1))
 
-                ax1 = fig1.add_subplot(111, projection=self.wcsRef)
-                ## ax1 = fig1.add_subplot(111)
+                ## ax1 = fig1.add_subplot(111, projection=self.wcsRef)
+                ax1 = fig1.add_subplot(111)
 
                 ax1.set_aspect('equal')
 
@@ -259,13 +259,21 @@ class WCSAlignment:
                         x_im, y_im = df_hst1pass[selection].sort_values('m', ascending=True)[
                                          ['x_im', 'y_im']].values[:nImStars].T
 
-                        nRefStarSelected = min(self.n_ref_stars, len(self.df_refCat))
-
                         ## x_ref, y_ref = df_refCat.sort_values('m', ascending=True)[['xt', 'yt']].values[:nRefStarSelected].T
-                        x_ref, y_ref = self.df_refCat.loc[self.df_refCat['in_footprint']].sort_values(
-                            'm', ascending=True)[['xt', 'yt']].values[:nRefStarSelected].T
+                        if self.in_footprint:
+                            nRefStarSelected = min(self.n_ref_stars,
+                                                   len(self.df_refCat.loc[self.df_refCat['in_footprint']]))
 
+                            x_ref, y_ref = self.df_refCat.loc[self.df_refCat['in_footprint']].sort_values(
+                                'm', ascending=True)[['xt', 'yt']].values[:nRefStarSelected].T
+                        else:
+                            nRefStarSelected = min(self.n_ref_stars, len(self.df_refCat))
 
+                            x_ref, y_ref = self.df_refCat.sort_values(
+                                'm', ascending=True)[['xt', 'yt']].values[:nRefStarSelected].T
+
+                        print("Selecting {0:d} reference stars (in footprint: {1:s})".format(x_ref.size,
+                                                                                             str(self.in_footprint)))
 
                         shiftX, shiftY, corrIdx, corrIm = corr.phaseCorrelate2d(x_im, y_im, x_ref, y_ref,
                                                                                 WCSAlignment.delX,
