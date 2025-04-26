@@ -148,8 +148,8 @@ class WCSAlignment:
 
                 fig1 = plt.figure(figsize=(WCSAlignment.xSize1, WCSAlignment.ySize1))
 
-                ## ax1 = fig1.add_subplot(111, projection=self.wcsRef)
-                ax1 = fig1.add_subplot(111)
+                ax1 = fig1.add_subplot(111, projection=self.wcsRef)
+                ## ax1 = fig1.add_subplot(111)
 
                 ax1.set_aspect('equal')
 
