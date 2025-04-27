@@ -164,7 +164,7 @@ class SIPEstimator:
             if (nGoodData[jjj] > self.min_n_refstar):
                 okays[jjj] = True
 
-            print(acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1]), "N_STARS =", nGoodData[jjj], "OKAY:", okays[jjj])
+            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj]), "N_STARS =", nGoodData[jjj], "OKAY:", okays[jjj])
 
         del selection
         gc.collect()
@@ -222,10 +222,10 @@ class SIPEstimator:
                 for chip in chips:
                     startTime = time.time()
 
-                    jj = 2 - chip
+                    jj  = 2 - chip
                     jjj = chip - 1
 
-                    chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[chip - 1], acsconstants.CHIP_POSITIONS[chip - 1])
+                    chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj])
 
                     hdu = hduList['SCI', chip]
 
