@@ -151,20 +151,20 @@ class SIPEstimator:
 
         okays = np.zeros(chips.size, dtype='bool')
         nGoodData = np.zeros(chips.size, dtype=int)
-        for chip in chips:
-            jjj = chip - 1
+        for jj in range(acsconstants.N_CHIPS):
+            chip = acsconstants.N_CHIPS - jj
 
             selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
                         hst1pass['q'] <= self.qMax) & (~np.isnan(hst1pass['nAppearances'])) & (
                                     hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
                                     matchRes <= self.max_pix_tol)
 
-            nGoodData[jjj] = len(hst1pass[selection])
+            nGoodData[jj] = len(hst1pass[selection])
 
-            if (nGoodData[jjj] > self.min_n_refstar):
-                okays[jjj] = True
+            if (nGoodData[jj] > self.min_n_refstar):
+                okays[jj] = True
 
-            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj]), "N_STARS =", nGoodData[jjj], "OKAY:", okays[jjj])
+            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj]), "N_STARS =", nGoodData[jj], "OKAY:", okays[jj])
 
         del selection
         gc.collect()
@@ -219,18 +219,20 @@ class SIPEstimator:
                     dxs, dys, rolls = [], [], []
 
                 textResults = ""
-                for chip in chips:
+                for jj in range(acsconstants.N_CHIPS):
                     startTime = time.time()
 
-                    jj  = 2 - chip
-                    jjj = chip - 1
+                    ver = jj + 1
+                    jjj = acsconstants.N_CHIPS - ver  ## Index for plotting
 
-                    chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj])
+                    chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj])
 
-                    hdu = hduList['SCI', chip]
+                    hdu = hduList['SCI', ver]
+
+                    k = int(hdu.header['CCDCHIP'])
 
                     ## Zero point of the y coordinates.
-                    if (chip == 1):
+                    if (ver == 1):
                         yzp    = 0.0
                         naxis2 = int(hdu.header['NAXIS2'])
                     else:
@@ -241,7 +243,7 @@ class SIPEstimator:
                     orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
                     vaFactor = float(hdu.header['VAFACTOR'])
 
-                    selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
+                    selection = (hst1pass['k'] == k) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
                                 hst1pass['q'] <= self.qMax) & (~np.isnan(hst1pass['nAppearances'])) & (
                                             hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
                                             matchRes <= self.max_pix_tol)
@@ -256,12 +258,12 @@ class SIPEstimator:
                     eta = self.refCat[refStarIdx]['yt'] / vaFactor
 
                     XC = hst1pass['X'][selection] - X0
-                    YC = hst1pass['Y'][selection] - Y0[chip - 1]
+                    YC = hst1pass['Y'][selection] - Y0[jj]
 
                     if self.make_lithographic_and_filter_mask_corrections:
-                        dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj], hst1pass['X'][selection].value,
+                        dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
-                        fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jjj], hst1pass['X'][selection].value,
+                        fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], hst1pass['X'][selection].value,
                                                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
 
                         ## print(dcorr)
@@ -397,7 +399,7 @@ class SIPEstimator:
                             ## Assign the current weight summation for the next iteration
                             previousWeightSum = weightSum
 
-                            print(baseImageFilename, chip, pOrder, iteration + 1, iteration2 + 1,
+                            print(baseImageFilename, k, pOrder, iteration + 1, iteration2 + 1,
                                   '{0:.3e} {1:.3e} {2:.3e}'.format(dxs[-1], dys[-1], rolls[-1]),
                                   "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (xi.size)),
                                   "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum))
@@ -576,7 +578,7 @@ class SIPEstimator:
                     ## print("ROLLS:", rolls)
 
                     ## Now that we have the coefficients, we repeat the model building for ALL objects in the chip
-                    selection = (hst1pass['k'] == chip)
+                    selection = (hst1pass['k'] == k)
 
                     hasRefStar = (hst1pass['refCatIndex'] >= 0)
 
@@ -586,12 +588,12 @@ class SIPEstimator:
                     etaRef = self.refCat[refStarIdx]['yt'] / vaFactor
 
                     XC = hst1pass['X'][selection] - X0
-                    YC = hst1pass['Y'][selection] - Y0[chip - 1]
+                    YC = hst1pass['Y'][selection] - Y0[jj]
 
                     if self.make_lithographic_and_filter_mask_corrections:
-                        dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj], hst1pass['X'][selection].value,
+                        dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
-                        fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jjj], hst1pass['X'][selection].value,
+                        fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], hst1pass['X'][selection].value,
                                                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
 
                         ## Apply the lithographic mask correction
@@ -640,7 +642,7 @@ class SIPEstimator:
                     ## Now we take the normal triad pqr_0 of the reference coordinate
                     pqr0Im = coords.getNormalTriad(c0Im)
 
-                    selection  = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & hst1pass['retained']
+                    selection  = (hst1pass['k'] == k) & (hst1pass['refCatIndex'] >= 0) & hst1pass['retained']
                     refStarIdx = hst1pass['refCatIndex'][selection].value
 
                     XCorr = hst1pass['xPred'][selection].value
@@ -675,7 +677,7 @@ class SIPEstimator:
                         pqr0Im = coords.getNormalTriad(c0Im)
 
                         ## Apply the CD Matrix to all sources in the chip, in order to obtain the new normal coordinates
-                        selectionChip = hst1pass['k'] == chip
+                        selectionChip = hst1pass['k'] == k
 
                         H, _ = sip.buildModel(hst1pass['xPred'][selectionChip].value,
                                               hst1pass['yPred'][selectionChip].value,
@@ -704,7 +706,7 @@ class SIPEstimator:
                     xi0  = float(self.wcsRef.to_header()['CRPIX1']) - xi0[0]
                     eta0 = eta0[0] - float(self.wcsRef.to_header()['CRPIX2'])
 
-                    selection = (hst1pass['k'] == chip)
+                    selection = (hst1pass['k'] == k)
 
                     hst1pass['xi'][selection]  = hst1pass['xi'][selection]  + xi0
                     hst1pass['eta'][selection] = hst1pass['eta'][selection] + eta0
@@ -733,7 +735,7 @@ class SIPEstimator:
                                                                  hst1pass['weights'][selection].value))
 
                     textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
-                        baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
+                        baseImageFilename, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
                     textResults += " {0:d} {1:d}".format(nIterTotal, nStars)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                     textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
@@ -744,7 +746,7 @@ class SIPEstimator:
                     textResults += "\n"
 
                     ## Repeat the selection process
-                    selection = (hst1pass['k'] == chip) & (hst1pass['refCatID'] >= 0) & (hst1pass['q'] > 0) & (
+                    selection = (hst1pass['k'] == k) & (hst1pass['refCatID'] >= 0) & (hst1pass['q'] > 0) & (
                                 hst1pass['q'] <= self.qMax) & (~np.isnan(hst1pass['nAppearances'])) & (
                                             hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
                                             matchRes <= self.max_pix_tol)
@@ -757,13 +759,13 @@ class SIPEstimator:
 
                     vmin, vmax = ZScaleInterval(contrast=0.10, max_iterations=5).get_limits(image)
 
-                    axes[jj].imshow(image, cmap=cMap, aspect='equal', vmin=vmin, vmax=vmax, origin='lower', rasterized=True)
+                    axes[jjj].imshow(image, cmap=cMap, aspect='equal', vmin=vmin, vmax=vmax, origin='lower', rasterized=True)
 
                     xyPosRetained = np.vstack([hst1pass[retained]['X'].value, hst1pass[retained]['Y'].value - yzp]).T
 
                     aperturesRetained = CircularAperture(xyPosRetained, r=20.0)
 
-                    aperturesRetained.plot(color='#1b9e77', lw=1, alpha=1, ax=axes[jj],
+                    aperturesRetained.plot(color='#1b9e77', lw=1, alpha=1, ax=axes[jjj],
                                            rasterized=True);  ## GREENS are accepted sources
 
                     xyPosRejected = np.vstack([hst1pass[(~retained) & selection]['X'].value,
@@ -771,16 +773,16 @@ class SIPEstimator:
 
                     aperturesRejected = CircularAperture(xyPosRejected, r=15.0)
 
-                    aperturesRejected.plot(color='#d95f02', lw=1, alpha=1, ax=axes[jj],
+                    aperturesRejected.plot(color='#d95f02', lw=1, alpha=1, ax=axes[jjj],
                                            rasterized=True);  ## BROWNS are accepted sources
 
-                    axes[jj].set_title('{0:s} --- {1:s}'.format(baseImageFilename, chipTitle))
+                    axes[jjj].set_title('{0:s} --- {1:s}'.format(baseImageFilename, chipTitle))
 
-                    axes[jj].xaxis.set_major_locator(MultipleLocator(dX))
-                    axes[jj].xaxis.set_minor_locator(MultipleLocator(dMX))
+                    axes[jjj].xaxis.set_major_locator(MultipleLocator(dX))
+                    axes[jjj].xaxis.set_minor_locator(MultipleLocator(dMX))
 
-                    axes[jj].yaxis.set_major_locator(MultipleLocator(dY))
-                    axes[jj].yaxis.set_minor_locator(MultipleLocator(dMY))
+                    axes[jjj].yaxis.set_major_locator(MultipleLocator(dY))
+                    axes[jjj].yaxis.set_minor_locator(MultipleLocator(dMY))
 
                     elapsedTime = time.time() - startTime
                     print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
