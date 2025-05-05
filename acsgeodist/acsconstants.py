@@ -13,6 +13,8 @@ AXIS_NAMES = [r'$X$', r'$Y$']
 
 COEFF_LABELS = ['A', 'B']
 
+CHIP_NUMBER = [2, 1]
+
 WFC = ['WFC2', 'WFC1']
 
 WFC_COLORS = ['#1f78b4', '#33a02c']
