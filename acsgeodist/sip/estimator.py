@@ -1871,7 +1871,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                     stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
 
                         textResults = ""
-                        for jjj, (chip, ver) in enumerate(chips, headers):
+                        for jjj, (chip, ver) in enumerate(zip(chips, headers)):
                             startTime = time.time()
 
                             jj = acsconstants.N_CHIPS - chip
