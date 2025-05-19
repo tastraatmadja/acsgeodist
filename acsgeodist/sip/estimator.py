@@ -165,7 +165,8 @@ class SIPEstimator:
             if (nGoodData[jj] > self.min_n_refstar):
                 okays[jj] = True
 
-            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj]), "N_STARS =", nGoodData[jj], "OKAY:", okays[jj])
+            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj]), "N_STARS =",
+                  nGoodData[jj], "OKAY:", okays[jj])
 
         del selection
         gc.collect()
@@ -1545,12 +1546,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         elapsedTime = time.time() - startTime
 
-                        print(chip, iteration + 1, iteration2 + 1,
-                              "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (self.xiAll[jjj].size)),
-                              "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum),
-                              "Elapsed time: {0}".format(convertTime(elapsedTime)))
-
                         if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
+                            print(chip, iteration + 1, iteration2 + 1,
+                                  "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (self.xiAll[jjj].size)),
+                                  "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum),
+                                  "Elapsed time: {0}".format(convertTime(elapsedTime)))
+
                             if makePlots:
                                 xSize = 8
                                 ySize = xSize
