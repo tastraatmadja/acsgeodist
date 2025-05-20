@@ -14,7 +14,8 @@ AXIS_NAMES = [r'$X$', r'$Y$']
 
 COEFF_LABELS = ['A', 'B']
 
-CHIP_NUMBER = np.array([2, 1], dtype=int)
+CHIP_NUMBER   = np.array([2, 1], dtype=int)
+HEADER_NUMBER = np.array([1, 2], dtype=int)
 
 CHIP_POSITIONS = ['bottom', 'top']
 

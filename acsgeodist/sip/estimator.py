@@ -41,8 +41,8 @@ N_PARS_CONST = 1
 MIN_RUWE = 0.8
 MAX_RUWE = 1.2
 
-chips   = acsconstants.CHIP_NUMBER
-headers = chips[::-1] # hdu[SCI, x]
+CHIPS   = acsconstants.CHIP_NUMBER
+HEADERS = acsconstants.HEADER_NUMBER # hdu[SCI, x]
 X0      = 2048.00
 Y0      = np.array([1024.0, 2048.0+1024.0])
 
@@ -150,11 +150,9 @@ class SIPEstimator:
 
         matchRes = np.sqrt((hst1pass['xPred'] - hst1pass['xRef']) ** 2 + (hst1pass['yPred'] - hst1pass['yRef']) ** 2)
 
-        okays = np.zeros(chips.size, dtype='bool')
-        nGoodData = np.zeros(chips.size, dtype=int)
-        for jj in range(acsconstants.N_CHIPS):
-            chip = acsconstants.CHIP_NUMBER
-
+        okays     = np.zeros(CHIPS.size, dtype='bool')
+        nGoodData = np.zeros(CHIPS.size, dtype=int)
+        for jj, chip in enumerate(CHIPS):
             selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
                         hst1pass['q'] <= self.qMax) & (~np.isnan(hst1pass['nAppearances'])) & (
                                     hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
@@ -221,13 +219,10 @@ class SIPEstimator:
                     dxs, dys, rolls = [], [], []
 
                 textResults = ""
-                for jj in range(acsconstants.N_CHIPS):
+                for jj, (chip, ver, chipTitle) in enumerate(zip(CHIPS, HEADERS, acsconstants.WFC_LABELS)):
                     startTime = time.time()
 
-                    ver = jj + 1
                     jjj = acsconstants.N_CHIPS - ver  ## Index for plotting
-
-                    chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj])
 
                     hdu = hduList['SCI', ver]
 
@@ -331,7 +326,7 @@ class SIPEstimator:
 
                     nIterTotal = 0
                     for iteration in range(N_ITER_OUTER):
-                        if (self.individualZP or (chip == 1)):
+                        if (self.individualZP or (chip == 2)):
                             dxs.append(sx)
                             dys.append(sy)
                             rolls.append(roll)
@@ -572,7 +567,7 @@ class SIPEstimator:
 
                                 indices = indices[~rejected]
 
-                        if (not (self.individualZP or (chip == 1))):
+                        if (not (self.individualZP or (chip == 2))):
                             break
 
                     ## print("SHIFTS_X:", dxs)
@@ -1138,7 +1133,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         okays = []
 
-        for chip in chips:
+        for chip in CHIPS:
             indivDataFilename = '{0:s}/individualCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
                 outDir, chip, self.tMin, self.tMax)
 
@@ -1227,9 +1222,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             gc.set_threshold(2, 1, 1)
 
-            for chip in chips:
-                jjj = chip - 1
-
+            for jjj, chip in enumerate(CHIPS):
                 self.xiAll[jjj]  = np.hstack(self.xiAll[jjj])
                 self.etaAll[jjj] = np.hstack(self.etaAll[jjj])
 
@@ -1402,9 +1395,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             nonFullColor = '#fc8d59'  ## Orange
             discardedColor = 'r'
 
-            for jjj, chip in enumerate(chips):
-                chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj])
+            startTime = time.time()
 
+            for jjj, (chip, chipTitle) in enumerate(zip(CHIPS, acsconstants.WFC_LABELS)):
                 indivDataFilename   = indivDataFilenames[jjj]
                 modelCoeffsFilename = modelCoeffsFilenames[jjj]
                 outTableFilename    = outTableFilenames[jjj]
@@ -1474,8 +1467,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             xiRef, etaRef = self._shiftRotateReferenceCoordinates(xiRef, etaRef, plateID, dx, dy, roll)
 
                     for iteration2 in range(N_ITER_INNER):
-                        startTime = time.time()
-
                         nIterTotal += 1
 
                         nStars = xiRef.size
@@ -1544,9 +1535,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         ## Assign the current weight summation for the next iteration
                         previousWeightSum = weightSum
 
-                        elapsedTime = time.time() - startTime
-
                         if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)):
+                            elapsedTime = time.time() - startTime
+
                             print(chip, iteration + 1, iteration2 + 1,
                                   "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (self.xiAll[jjj].size)),
                                   "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum),
@@ -1872,17 +1863,13 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                     stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
 
                         textResults = ""
-                        for jjj, (chip, ver) in enumerate(zip(chips, headers)):
+                        for jjj, (chip, ver, chipTitle) in enumerate(zip(CHIPS, HEADERS, acsconstants.WFC_LABELS)):
                             startTime = time.time()
-
-                            jj = acsconstants.N_CHIPS - chip
-
-                            chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj])
 
                             hdu = hduList['SCI', ver]
 
                             ## Zero point of the y coordinates.
-                            if (ver == 1):
+                            if (chip == 2):
                                 yzp    = 0.0
                                 naxis2 = int(hdu.header['NAXIS2'])
                             else:
@@ -1906,7 +1893,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             nStars = xiRef.size
 
                             XC = hst1pass['X'][selection] - X0
-                            YC = hst1pass['Y'][selection] - Y0[chip - 1]
+                            YC = hst1pass['Y'][selection] - Y0[jjj]
 
                             if self.make_lithographic_and_filter_mask_corrections:
                                 dcorr = np.array(
@@ -2348,11 +2335,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 matchRes = np.sqrt(delX ** 2 + delY ** 2)
 
-                okays     = np.zeros(chips.size, dtype='bool')
-                nGoodData = np.zeros(chips.size, dtype=int)
-                for chip in chips:
-                    jjj = chip - 1
-
+                okays     = np.zeros(CHIPS.size, dtype='bool')
+                nGoodData = np.zeros(CHIPS.size, dtype=int)
+                for jjj, chip in enumerate(CHIPS):
                     selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
                             hst1pass['q'] <= Q_MAX) & (~np.isnan(hst1pass['nAppearances'])) & (
                                         hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
@@ -2390,17 +2375,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     self.XtAll.append(Xt)
                     self.tObs.append(t_acs.decimalyear)
 
-                    for chip, ver in zip(chips, headers):
-                        jj  = chips.size - chip
-                        jjj = chip - 1
-
-                        chipTitle = acsconstants.CHIP_LABEL(acsconstants.WFC[jjj], acsconstants.CHIP_POSITIONS[jjj])
-
+                    for jjj, (chip, ver) in enumerate(zip(CHIPS, HEADERS)):
                         hdu = hduList['SCI', ver]
 
                         ## Zero point of the y coordinates.
                         naxis2 = int(hdu.header['NAXIS2'])
-                        if (ver == 1):
+                        if (chip == 2):
                             yzp = 0.0
                         else:
                             yzp += float(naxis2)
@@ -2428,7 +2408,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         eta = self.refCat[refStarIdx]['yt'] / vaFactor
 
                         XC = hst1pass['X'][selection] - X0
-                        YC = hst1pass['Y'][selection] - Y0[chip - 1]
+                        YC = hst1pass['Y'][selection] - Y0[jjj]
 
                         if self.make_lithographic_and_filter_mask_corrections:
                             dcorr = np.array(litho.interp_dtab_ftab_data(
