@@ -21,7 +21,7 @@ import pandas as pd
 from photutils.aperture import CircularAperture
 from scipy import interpolate, linalg, sparse
 import seaborn as sns
-from sklearn import linear_model
+from sklearn import linear_model, model_selection
 import time
 
 NAXIS = acsconstants.NAXIS
@@ -148,28 +148,7 @@ class SIPEstimator:
 
         hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
 
-        matchRes = np.sqrt((hst1pass['xPred'] - hst1pass['xRef']) ** 2 + (hst1pass['yPred'] - hst1pass['yRef']) ** 2)
-
-        okays     = np.zeros(CHIPS.size, dtype='bool')
-        nGoodData = np.zeros(CHIPS.size, dtype=int)
-        for jj, chip in enumerate(CHIPS):
-            selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
-                        hst1pass['q'] <= self.qMax) & (~np.isnan(hst1pass['nAppearances'])) & (
-                                    hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
-                                    matchRes <= self.max_pix_tol)
-
-            nGoodData[jj] = len(hst1pass[selection])
-
-            if (nGoodData[jj] > self.min_n_refstar):
-                okays[jj] = True
-
-            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj]), "N_STARS =",
-                  nGoodData[jj], "OKAY:", okays[jj])
-
-        del selection
-        gc.collect()
-
-        okayToProceed = np.prod(okays, dtype='bool')
+        okayToProceed, nGoodData = self._getOkayToProceed(hst1pass)
 
         print("OKAY TO PROCEED:", okayToProceed)
 
@@ -195,6 +174,9 @@ class SIPEstimator:
                 ## Save the old match residuals before it is wiped out with nans
                 delX = hst1pass['xPred'] - hst1pass['xRef']
                 delY = hst1pass['yPred'] - hst1pass['yRef']
+
+                matchRes = np.sqrt(
+                    (hst1pass['xPred'] - hst1pass['xRef']) ** 2 + (hst1pass['yPred'] - hst1pass['yRef']) ** 2)
 
                 ## Change the columns with default values
                 hst1pass['xPred']    = np.nan
@@ -970,6 +952,331 @@ class SIPEstimator:
         ## print('Counts:', gc.get_count())
 
         return textResults
+
+    def crossValidateHST1PassFile(self, pOrder, nFolds, hst1passFile, imageFilename, outDir='.', **kwargs):
+        addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+
+        baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
+
+        hduList = fits.open(imageFilename)
+
+        tExp = float(hduList[0].header['EXPTIME'])
+        tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
+        t_acs = Time(tstring, scale='ut1', format='fits')
+
+        pa_v3 = float(hduList[0].header['PA_V3'])
+
+        posTarg1 = float(hduList[0].header['POSTARG1'])
+        posTarg2 = float(hduList[0].header['POSTARG2'])
+
+        dt = t_acs.decimalyear - self.tRef0.utc.value
+
+        ## We use the observation time, in combination with the proper motions to move
+        ## the coordinates into the time
+        self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
+        self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+
+        hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+
+        hst1pass.sort('W')
+
+        okayToProceed, nGoodData = self._getOkayToProceed(hst1pass)
+
+        print("OKAY TO PROCEED:", okayToProceed)
+
+        textResults = None
+
+        if okayToProceed:
+            ## Final table filename
+            outTableFilename = '{0:s}/{1:s}_crossValidation_pOrder{2:d}_nFolds{3:d}_resids.csv'.format(
+                outDir, baseImageFilename, pOrder, nFolds)
+
+            if (not os.path.exists(outTableFilename)):
+                startTime0 = time.time()
+
+                ## Save the old match residuals before it is wiped out with nans
+                delX = hst1pass['xPred'] - hst1pass['xRef']
+                delY = hst1pass['yPred'] - hst1pass['yRef']
+
+                matchRes = np.sqrt(
+                    (hst1pass['xPred'] - hst1pass['xRef']) ** 2 + (hst1pass['yPred'] - hst1pass['yRef']) ** 2)
+
+                ## Change the columns with default values
+                hst1pass['xPred'] = np.nan
+                hst1pass['yPred'] = np.nan
+                hst1pass['xRef'] = np.nan
+                hst1pass['yRef'] = np.nan
+                hst1pass['dx'] = np.nan
+                hst1pass['dy'] = np.nan
+                hst1pass['retained'] = False
+                hst1pass['weights'] = 0.0  ## Final weights for all detected sources in the chip
+                hst1pass['xi'] = np.nan
+                hst1pass['eta'] = np.nan
+                hst1pass['xiRef'] = np.nan
+                hst1pass['etaRef'] = np.nan
+                hst1pass['resXi'] = np.nan
+                hst1pass['resEta'] = np.nan
+                hst1pass['alpha'] = np.nan
+                hst1pass['delta'] = np.nan
+                hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
+
+                kf = model_selection.KFold(n_splits=nFolds)
+
+                CVResiduals = []
+
+                for jj, (chip, ver, chipTitle) in enumerate(zip(CHIPS, HEADERS, acsconstants.WFC_LABELS)):
+                    hdu = hduList['SCI', ver]
+
+                    k = int(hdu.header['CCDCHIP'])
+
+                    ## Zero point of the y coordinates.
+                    if (ver == 1):
+                        yzp = 0.0
+                        naxis2 = int(hdu.header['NAXIS2'])
+                    else:
+                        yzp += float(naxis2)
+
+                        naxis2 = int(hdu.header['NAXIS2'])
+
+                    orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
+                    vaFactor = float(hdu.header['VAFACTOR'])
+
+                    selection = (hst1pass['k'] == k) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
+                            hst1pass['q'] <= self.qMax) & (~np.isnan(hst1pass['nAppearances'])) & (
+                                        hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
+                                        matchRes <= self.max_pix_tol)
+
+                    refStarIdx = hst1pass[selection]['refCatIndex'].value
+
+                    nData = len(refStarIdx)
+
+                    print("CHIP:", chipTitle, "P_ORDER:", pOrder, "N_STARS:", nData)
+
+                    xi = self.refCat[refStarIdx]['xt'] / vaFactor
+                    eta = self.refCat[refStarIdx]['yt'] / vaFactor
+
+                    XC = hst1pass['X'][selection] - X0
+                    YC = hst1pass['Y'][selection] - Y0[jj]
+
+                    if self.make_lithographic_and_filter_mask_corrections:
+                        dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
+                                                                     hst1pass['Y'][selection].value - yzp, XRef * 2,
+                                                                     YRef * 2)).T
+                        fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], hst1pass['X'][selection].value,
+                                                                     hst1pass['Y'][selection].value - yzp, XRef * 2,
+                                                                     YRef * 2)).T
+
+                        ## print(dcorr)
+                        ## print(fcorr)
+
+                        ## Apply the lithographic and filter mask correction
+                        XC -= (dcorr[:, 2] - fcorr[:, 2])
+                        YC -= (dcorr[:, 3] - fcorr[:, 3])
+
+                        del dcorr
+                        del fcorr
+
+                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
+
+                    alpha0Im = float(hdu.header['CRVAL1'])
+                    delta0Im = float(hdu.header['CRVAL2'])
+
+                    xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
+
+                    chipCVResiduals = []
+
+                    for trainIdx, (train, test) in enumerate(kf.split(X)):
+                        print("P_ORDER:", pOrder, "FOLD:", trainIdx, train.size, test.size)
+                        ## print(train)
+                        ## print(test)
+
+                        sx, sy, roll = xi0[0], eta0[0], np.deg2rad(orientat)
+
+                        X_train = deepcopy(X[train])
+
+                        ## Initialize the reference coordinates
+                        xi_train  = deepcopy(xi[train])
+                        eta_train = deepcopy(eta[train])
+
+                        ## Initialize the weights using the match residuals
+                        residuals = np.array([delX[selection][train], delY[selection][train]]).T
+
+                        ## Use the weights to estimate the mean and covariance matrix of the residual distribution
+                        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, np.ones(residuals.shape[0]))
+
+                        weights = stat.wdecay(stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
+
+                        previousWeightSum = np.sum(weights)
+
+                        ## IF we want to have individual zero points for each chip we initialize the container for shifts
+                        ## and rolls here
+                        dxs, dys, rolls = [], [], []
+
+                        ## print(X_train.shape, xi_train.shape, eta_train.shape, weights.shape)
+
+                        nIterTotal = 0
+                        for iteration in range(N_ITER_OUTER):
+                            dxs.append(sx)
+                            dys.append(sy)
+                            rolls.append(roll)
+
+                            xi_train, eta_train = coords.shift_rotate_coords(xi_train, eta_train, sx, sy, roll)
+
+                            for iteration2 in range(N_ITER_INNER):
+                                nIterTotal += 1
+
+                                nStars = xi_train.size
+
+                                ## Initialize the linear regression
+                                reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
+
+                                reg.fit(X_train, xi_train / scalerX, sample_weight=weights)
+
+                                coeffsA = reg.coef_ * scalerX / scalerArray
+
+                                reg.fit(X_train, eta_train / scalerY, sample_weight=weights)
+
+                                coeffsB = reg.coef_ * scalerY / scalerArray
+
+                                coeffs = np.zeros((coeffsA.size + coeffsB.size))
+
+                                coeffs[0::2] = coeffsA
+                                coeffs[1::2] = coeffsB
+
+                                xiPred  = np.matmul(X_train * scalerArray, coeffs[0::2])
+                                etaPred = np.matmul(X_train * scalerArray, coeffs[1::2])
+
+                                ## Residuals already in pixel and in image axis
+                                residualsXi  = xi_train - xiPred
+                                residualsEta = eta_train - etaPred
+
+                                rmsXi = np.sqrt(np.average(residualsXi ** 2, weights=weights))
+                                rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
+
+                                residuals = np.vstack([residualsXi, residualsEta]).T
+
+                                ## Use the weights to estimate the mean and covariance matrix of the residual
+                                ## distribution
+                                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
+
+                                ## Calculate the Mahalanobis Distance, i.e. standardized distance
+                                ## from the center of the gaussian distribution
+                                z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+
+                                ## We now use the z statistics to re-calculate the weights
+                                weights = stat.wdecay(z)
+
+                                ## What we now call 'retained' are those stars with full weight
+                                retained0 = weights >= 1.0
+
+                                ## We have non-full weight stars but non-zero weights
+                                nonFull = (~retained0) & (weights > 0)
+
+                                ## Finally those stars with zero weights
+                                rejected = weights <= 0
+
+                                weightSum = np.sum(weights)
+
+                                weightSumDiff = np.abs(weightSum - previousWeightSum) / weightSum
+
+                                ## Assign the current weight summation for the next iteration
+                                previousWeightSum = deepcopy(weightSum)
+
+                                ## Don't think we need these printouts
+                                '''
+                                print(baseImageFilename, k, pOrder, iteration + 1, iteration2 + 1,
+                                      '{0:.3e} {1:.3e} {2:.3e}'.format(dxs[-1], dys[-1], rolls[-1]),
+                                      "N_STARS: {0:d}/{1:d}".format(xi_train[~rejected].size, (xi_train.size)),
+                                      "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum))
+                                ''';
+                                del reg
+                                gc.collect()
+
+                                ## At the last iteration, re-calculate the shift and rolls
+                                ## if ((iteration2+1) == (N_ITER_INNER)):
+                                if ((weightSumDiff < 1.e-9) or (iteration2 + 1) == (N_ITER_INNER)):
+                                    ## Shift and rotate the reference coordinates using the new
+                                    ## zero-th order coefficients and rotation angle
+                                    sx, sy = coeffs[0], coeffs[1]
+                                    epsilon = np.arctan(coeffs[4] / coeffs[5])
+
+                                    roll = -epsilon
+
+                                    break
+                                else:
+                                    X_train = X_train[~rejected]
+
+                                    weights = weights[~rejected]
+
+                                    xi_train  = xi_train[~rejected]
+                                    eta_train = eta_train[~rejected]
+
+                        ## Once we have the coefficients, we calculate the residuals on the test set
+                        xiPred_test  = np.matmul(X[test] * scalerArray, coeffs[0::2])
+                        etaPred_test = np.matmul(X[test] * scalerArray, coeffs[1::2])
+
+                        xi_test  = deepcopy(xi[test])
+                        eta_test = deepcopy(eta[test])
+                        for sx, sy, roll in zip(dxs, dys, rolls):
+                            xi_test, eta_test = coords.shift_rotate_coords(xi_test, eta_test, sx, sy, roll)
+
+                        ## Residuals already in pixel and in image axis
+                        residualsXi_test  = xi_test  - xiPred_test
+                        residualsEta_test = eta_test - etaPred_test
+
+                        residuals_test = np.vstack([residualsXi_test, residualsEta_test]).T
+
+                        ## Use the weights to estimate the mean and covariance matrix of the residual distribution
+                        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals_test,
+                                                                               np.ones(residuals_test.shape[0]))
+
+                        weights_test = stat.wdecay(stat.getMahalanobisDistances(residuals_test, mean,
+                                                                                np.linalg.inv(cov))).reshape((-1,1))
+
+                        foldIndex = np.full_like(weights_test, trainIdx, dtype=int)
+
+                        chipCVResiduals.append(np.hstack([residuals_test, weights_test, foldIndex]))
+
+                    chipNumber = np.full((X.shape[0], 1), chip)
+
+                    chipCVResiduals = np.hstack([chipNumber, np.vstack(chipCVResiduals)])
+
+                    CVResiduals.append(chipCVResiduals)
+
+                CVResiduals = np.vstack(CVResiduals)
+
+                df = pd.DataFrame(CVResiduals, columns=['k', 'dx', 'dy', 'weights', 'foldIndex']).astype({'k': 'int', 'foldIndex': 'int'})
+
+                df.to_csv(outTableFilename, index=False)
+
+                elapsedTime0 = time.time() - startTime0
+                print("P_ORDER = {0:d}, N_FOLDS = {1:d}, DONE! Elapsed time: {2:s}".format(pOrder, nFolds,
+                                                                                           convertTime(elapsedTime0)))
+                return outTableFilename
+
+    def _getOkayToProceed(self, catalogue):
+        matchRes = np.sqrt((catalogue['xPred'] - catalogue['xRef']) ** 2 + (catalogue['yPred'] - catalogue['yRef']) ** 2)
+
+        okays = np.zeros(CHIPS.size, dtype='bool')
+        nGoodData = np.zeros(CHIPS.size, dtype=int)
+        for jj, chip in enumerate(CHIPS):
+            selection = (catalogue['k'] == chip) & (catalogue['refCatIndex'] >= 0) & (catalogue['q'] > 0) & (
+                    catalogue['q'] <= self.qMax) & (~np.isnan(catalogue['nAppearances'])) & (
+                                catalogue['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
+                                matchRes <= self.max_pix_tol)
+
+            nGoodData[jj] = len(catalogue[selection])
+
+            if (nGoodData[jj] > self.min_n_refstar):
+                okays[jj] = True
+
+            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj]), "N_STARS =",
+                  nGoodData[jj], "OKAY:", okays[jj])
+
+        del selection
+        gc.collect()
+
+        return np.prod(okays, dtype='bool'), nGoodData
 
     def _getCDMatrix(self, xiInt, etaInt, xiRef, etaRef, weights=None, pOrder=1, scalerX=1.0, scalerY=1.0):
         H, _ = sip.buildModel(xiInt, etaInt, pOrder, scalerX=scalerX, scalerY=scalerY)
