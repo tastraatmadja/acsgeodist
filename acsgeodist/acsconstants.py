@@ -27,3 +27,12 @@ CHIP_LABEL = lambda wfc, pos : '{0:s} ({1:s})'.format(wfc, pos)
 WFC_LABELS = [CHIP_LABEL(wfc, pos) for wfc, pos in zip(WFC, CHIP_POSITIONS)]
 
 N_CHIPS = len(WFC)
+
+FILTERS = ["F435W", "F606W", "F814W"]
+
+N_FILTERS = len(FILTERS)
+
+##                    CH2 (BOTTOM) CH1 (TOP) COMBINED_PROPERTIES
+FILTER_CHIP_COLORS = [['#2c7fb8', '#a1dab4', '#253494'], ## F435W
+                      ['#31a354', '#c2e699', '#006837'], ## F606W
+                      ['#dd1c77', '#d7b5d8', '#980043']] ## F814W
