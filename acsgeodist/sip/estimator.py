@@ -1280,7 +1280,7 @@ class SIPEstimator:
 
     def _getCDMatrix(self, xiInt, etaInt, xiRef, etaRef, weights=None, pOrder=1, scalerX=1.0, scalerY=1.0):
         ## Select only stars with finite values. No NaNs.
-        selection = np.isfinite(xiInt) & np.isfinite(yInt) & np.isfinite(xiRef) & np.isfinite(etaRef)
+        selection = np.isfinite(xiInt) & np.isfinite(etaInt) & np.isfinite(xiRef) & np.isfinite(etaRef)
 
         H, _ = sip.buildModel(xiInt, etaInt, pOrder, scalerX=scalerX, scalerY=scalerY)
 
