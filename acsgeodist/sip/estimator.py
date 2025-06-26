@@ -1279,15 +1279,18 @@ class SIPEstimator:
         return np.prod(okays, dtype='bool'), nGoodData
 
     def _getCDMatrix(self, xiInt, etaInt, xiRef, etaRef, weights=None, pOrder=1, scalerX=1.0, scalerY=1.0):
+        ## Select only stars with finite values. No NaNs.
+        selection = np.isfinite(xiInt) & np.isfinite(yInt) & np.isfinite(xiRef) & np.isfinite(etaRef)
+
         H, _ = sip.buildModel(xiInt, etaInt, pOrder, scalerX=scalerX, scalerY=scalerY)
 
         reg = linear_model.LinearRegression(fit_intercept=False, copy_X=True)
 
-        reg.fit(H, xiRef, sample_weight=weights)
+        reg.fit(H[selection], xiRef[selection], sample_weight=weights)
 
         C1 = reg.coef_
 
-        reg.fit(H, etaRef, sample_weight=weights)
+        reg.fit(H[selection], etaRef[selection], sample_weight=weights)
 
         C2 = reg.coef_
 
