@@ -8,6 +8,8 @@ import numpy as np
 
 ACS_PLATESCALE = 50.0 * u.mas / u.pix
 
+SBC_PLATESCALE = np.array([34.0, 30.0]) * u.mas / u.pix
+
 NAXIS = 2
 
 AXIS_NAMES = [r'$X$', r'$Y$']
