@@ -1282,15 +1282,21 @@ class SIPEstimator:
         ## Select only stars with finite values. No NaNs.
         selection = np.isfinite(xiInt) & np.isfinite(etaInt) & np.isfinite(xiRef) & np.isfinite(etaRef)
 
+        ## Additional selection if weights is not None
+        weights2 = None
+        if weights is not None:
+            selection = selection & np.isfinite(weights)
+            weights2  = weights[selection]
+
         H, _ = sip.buildModel(xiInt, etaInt, pOrder, scalerX=scalerX, scalerY=scalerY)
 
         reg = linear_model.LinearRegression(fit_intercept=False, copy_X=True)
 
-        reg.fit(H[selection], xiRef[selection], sample_weight=weights[selection])
+        reg.fit(H[selection], xiRef[selection], sample_weight=weights2)
 
         C1 = reg.coef_
 
-        reg.fit(H[selection], etaRef[selection], sample_weight=weights[selection])
+        reg.fit(H[selection], etaRef[selection], sample_weight=weights2)
 
         C2 = reg.coef_
 
