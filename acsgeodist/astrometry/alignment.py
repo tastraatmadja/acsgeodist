@@ -79,11 +79,14 @@ class WCSAlignment:
         self.n = self.pOrder + 1
         self.P = sip.getUpperTriangularMatrixNumberOfElements(self.n)
 
-    def alignImage(self, hst1passFilenames, imageFilenames, outDir='.'):
+
+    def alignImage(self, hst1passFilenames, imageFilenames, outDir='.', detectorName='WFC'):
         if not isinstance(hst1passFilenames, list):
             hst1passFilenames = [hst1passFilenames]
         if not isinstance(imageFilenames, list):
             imageFilenames = [imageFilenames]
+
+        detectorName = detectorName
 
         shiftInfoFilename = "{0:s}/shifts_pOrder{1:d}.txt".format(outDir, self.pOrder)
 
@@ -109,8 +112,8 @@ class WCSAlignment:
         # Initial match is then performed. We then use the stars in these initial match to derive an improved linear
         # transformation and performed the cross-matching the second time.
         for hst1passFilename, imageFilename in zip(hst1passFilenames, imageFilenames):
-            print(os.path.basename(hst1passFilename), os.path.basename(imageFilename))
-            df_hst1pass = reader.readHST1PassFile(hst1passFilename)
+            print(os.path.basename(hst1passFilename), os.path.basename(imageFilename), detectorName)
+            df_hst1pass = reader.readHST1PassFile(hst1passFilename, detector=detectorName)
 
             hduList = fits.open(imageFilename)
 
