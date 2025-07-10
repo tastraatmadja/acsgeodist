@@ -43,9 +43,16 @@ Given a SkyCoord object c, return the source ID of an ACS source using healpix, 
 even sources close to each other can have unique id.
 '''
 def generateSourceID(c):
-    pixIds = hp.pixelfunc.ang2pix(HP_NSIDES, c.dec.to_value(u.radian), c.ra.to_value(u.radian), nest=HP_NESTED, lonlat=True)
+    pixIds = hp.pixelfunc.ang2pix(HP_NSIDES, c.dec.to_value(u.radian), c.ra.to_value(u.radian),
+                                  nest=HP_NESTED, lonlat=True)
 
     return ['ACS_{0:018d}'.format(pixId) for pixId in pixIds]
+
+def getSourceID(alpha, delta):
+    pixId = hp.pixelfunc.ang2pix(HP_NSIDES, delta.to_value(u.radian), alpha.to_value(u.radian),
+                                 nest=HP_NESTED, lonlat=True)
+
+    return 'ACS_{0:018d}'.format(pixId)
 
 '''
 Given a list of HST SPT and FLC files, return the position and velocity of the telescope at the middle of the exposure.
