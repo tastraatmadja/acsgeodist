@@ -9,8 +9,7 @@ from astropy.time import Time
 from astropy.visualization import ZScaleInterval
 from astropy import wcs
 from matplotlib.backends.backend_pdf import PdfPages
-import matplotlib.pyplot as plt
-from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
+from matplotlib import pyplot as plt, ticker
 import numpy as np
 from photutils.aperture import CircularAperture
 from sklearn.linear_model import LinearRegression
@@ -29,13 +28,6 @@ class WCSAlignment:
     hx, hy = 1.0, 1.0
 
     MAX_SHIFT = np.inf
-
-    ## Plotting detected sources
-    xSize0 = 12
-    ySize0 = xSize0
-
-    nRows0 = 2
-    nCols0 = 1
 
     cMap0 = 'Greys'
 
@@ -86,7 +78,22 @@ class WCSAlignment:
         if not isinstance(imageFilenames, list):
             imageFilenames = [imageFilenames]
 
-        detectorName = detectorName
+        self.detectorName = detectorName
+        if (self.detectorName == 'WFC'):
+            self.n_chips       = acsconstants.N_CHIPS
+            self.chip_number   = acsconstants.CHIP_NUMBER
+            self.header_number = acsconstants.HEADER_NUMBER
+        elif (self.detectorName == 'SBC'):
+            self.n_chips       = acsconstants.SBC_N_CHIPS
+            self.chip_number   = acsconstants.SBC_CHIP_NUMBER
+            self.header_number = acsconstants.HEADER_NUMBER
+
+        nRows0 = self.n_chips
+        nCols0 = 1
+
+        ## Plotting detected sources
+        xSize0 = 12
+        ySize0 = xSize0
 
         shiftInfoFilename = "{0:s}/shifts_pOrder{1:d}.txt".format(outDir, self.pOrder)
 
@@ -112,8 +119,8 @@ class WCSAlignment:
         # Initial match is then performed. We then use the stars in these initial match to derive an improved linear
         # transformation and performed the cross-matching the second time.
         for hst1passFilename, imageFilename in zip(hst1passFilenames, imageFilenames):
-            print(os.path.basename(hst1passFilename), os.path.basename(imageFilename), detectorName)
-            df_hst1pass = reader.readHST1PassFile(hst1passFilename, detector=detectorName)
+            print(os.path.basename(hst1passFilename), os.path.basename(imageFilename), self.detectorName)
+            df_hst1pass = reader.readHST1PassFile(hst1passFilename, detector=self.detectorName)
 
             hduList = fits.open(imageFilename)
 
@@ -167,25 +174,28 @@ class WCSAlignment:
                     ax1.imshow(self.refImage, cmap=WCSAlignment.cMap0, vmin=vmin, vmax=vmax, origin='lower')
 
 
-                fig0, axes0 = plt.subplots(figsize=(WCSAlignment.xSize0, WCSAlignment.ySize0),
-                                           nrows=WCSAlignment.nRows0, ncols=WCSAlignment.nCols0, rasterized=True)
+                fig0, axes0 = plt.subplots(figsize=(xSize0, ySize0), nrows=nRows0, ncols=nCols0, rasterized=True,
+                                           squeeze=False)
 
                 plt.subplots_adjust(wspace=0.0, hspace=0.15)
 
                 phaseCorrelationFigures = []
 
-                for jj in range(acsconstants.N_CHIPS):
+                title = '{0:s}'.format(rootname)
+
+                for jj in range(self.n_chips):
                     startTime = time.time()
 
-                    ver = jj + 1
-                    jjj = acsconstants.N_CHIPS - ver ## Index for plotting
-
-                    chipLabel = acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj])
-                    title = '{0:s} --- {1:s}'.format(rootname, chipLabel)
+                    ver = self.header_number[jj]
+                    jjj = self.n_chips - ver ## Index for plotting
 
                     hdu = hduList['SCI', ver]
 
-                    k = int(hdu.header['CCDCHIP'])
+                    if (self.detectorName == 'WFC'):
+                        chipLabel = acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj])
+                        title = '{0:s} --- {1:s}'.format(rootname, chipLabel)
+
+                        k = int(hdu.header['CCDCHIP'])
 
                     # Zero point of the y coordinates.
                     if (ver == 1):
@@ -200,16 +210,17 @@ class WCSAlignment:
 
                     vmin0, vmax0 = ZScaleInterval(contrast=0.10, max_iterations=5).get_limits(image0)
 
-                    axes0[jjj].imshow(image0, cmap=WCSAlignment.cMap0, aspect='equal', vmin=vmin0, vmax=vmax0,
-                                      origin='lower')
+                    axes0[jjj,0].imshow(image0, cmap=WCSAlignment.cMap0, aspect='equal', vmin=vmin0, vmax=vmax0,
+                                        origin='lower')
 
-                    axes0[jjj].set_title(title)
 
-                    axes0[jjj].xaxis.set_major_locator(MultipleLocator(WCSAlignment.dX0))
-                    axes0[jjj].xaxis.set_minor_locator(MultipleLocator(WCSAlignment.dMX0))
+                    axes0[jjj,0].set_title(title)
 
-                    axes0[jjj].yaxis.set_major_locator(MultipleLocator(WCSAlignment.dY0))
-                    axes0[jjj].yaxis.set_minor_locator(MultipleLocator(WCSAlignment.dMY0))
+                    axes0[jjj,0].xaxis.set_major_locator(ticker.AutoLocator())
+                    axes0[jjj,0].xaxis.set_minor_locator(ticker.AutoMinorLocator())
+
+                    axes0[jjj,0].yaxis.set_major_locator(ticker.AutoLocator())
+                    axes0[jjj,0].yaxis.set_minor_locator(ticker.AutoMinorLocator())
 
                     ## Now we start to plot the image footprint on the celestial sky
                     wcsIm = wcs.WCS(hdu.header, fobj=hduList)
@@ -510,7 +521,7 @@ class WCSAlignment:
 
                             apertures = CircularAperture(xyPos, r=20.0)
 
-                            apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1, ax=axes0[jjj]);
+                            apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1, ax=axes0[jjj,0]);
 
                             selection = (df_hst1pass['k'] == k) & df_hst1pass['hasRefCat']
 
@@ -519,7 +530,7 @@ class WCSAlignment:
 
                             apertures = CircularAperture(xyPos, r=20.0)
 
-                            apertures.plot(color=WCSAlignment.refStarColor, lw=1, alpha=1, ax=axes0[jjj]);
+                            apertures.plot(color=WCSAlignment.refStarColor, lw=1, alpha=1, ax=axes0[jjj,0]);
 
                             del X
                             del reg
@@ -547,7 +558,7 @@ class WCSAlignment:
 
                             apertures = CircularAperture(xyPos, r=20.0)
 
-                            apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1, ax=axes0[jjj]);
+                            apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1, ax=axes0[jjj,0]);
 
                             del selection
                             del corrIm
@@ -573,7 +584,7 @@ class WCSAlignment:
 
                         apertures = CircularAperture(xyPos, r=20.0)
 
-                        apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1, ax=axes0[jjj]);
+                        apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1, ax=axes0[jjj,0]);
 
                     elapsedTime = time.time() - startTime
                     print("CHIP DONE! Elapsed time:", convertTime(elapsedTime))
@@ -738,11 +749,11 @@ class WCSAlignment:
 
                 axes2[axis1, axis2].set_ylim(-self.max_sep_refined.value, +self.max_sep_refined.value)
 
-                axes2[axis1, axis2].xaxis.set_major_locator(AutoLocator())
-                axes2[axis1, axis2].xaxis.set_minor_locator(AutoMinorLocator())
+                axes2[axis1, axis2].xaxis.set_major_locator(ticker.AutoLocator())
+                axes2[axis1, axis2].xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
-                axes2[axis1, axis2].yaxis.set_major_locator(AutoLocator())
-                axes2[axis1, axis2].yaxis.set_minor_locator(AutoMinorLocator())
+                axes2[axis1, axis2].yaxis.set_major_locator(ticker.AutoLocator())
+                axes2[axis1, axis2].yaxis.set_minor_locator(ticker.AutoMinorLocator())
 
         axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
 
@@ -780,11 +791,11 @@ class WCSAlignment:
         ax.set_xlim(-self.max_sep_refined.value, +self.max_sep_refined.value)
         ax.set_ylim(-self.max_sep_refined.value, +self.max_sep_refined.value)
 
-        ax.xaxis.set_major_locator(AutoLocator())
-        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.xaxis.set_major_locator(ticker.AutoLocator())
+        ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
-        ax.yaxis.set_major_locator(AutoLocator())
-        ax.yaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_major_locator(ticker.AutoLocator())
+        ax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
 
         ax.set_title('{0:s}'.format(rootname))
 
