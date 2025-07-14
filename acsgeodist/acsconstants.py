@@ -41,7 +41,7 @@ FILTER_CHIP_COLORS = [['#2c7fb8', '#a1dab4', '#253494'], ## F435W
                       ['#31a354', '#c2e699', '#006837'], ## F606W
                       ['#dd1c77', '#d7b5d8', '#980043']] ## F814W
 
-SBC_CHIP_NUMBER   = np.array([1], dtype=int)
-SBC_HEADER_NUMBER = np.array([1], dtype=int)
+SBC_CHIP_NUMBER    = np.array([1], dtype=int)
+SBC_HEADER_NUMBER  = np.array([1], dtype=int)
 SBC_N_CHIPS        = len(SBC_CHIP_NUMBER)
-
+SBC_LABELS         = ['SBC']

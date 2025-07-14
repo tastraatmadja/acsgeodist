@@ -79,14 +79,14 @@ class WCSAlignment:
             imageFilenames = [imageFilenames]
 
         self.detectorName = detectorName
+        yAxisExtendFactor = 1.2
         if (self.detectorName == 'WFC'):
-            self.n_chips       = acsconstants.N_CHIPS
-            self.chip_number   = acsconstants.CHIP_NUMBER
-            self.header_number = acsconstants.HEADER_NUMBER
+            self.n_chips        = acsconstants.N_CHIPS
+            self.header_numbers = acsconstants.HEADER_NUMBER
+            yAxisExtendFactor  = 2.5
         elif (self.detectorName == 'SBC'):
-            self.n_chips       = acsconstants.SBC_N_CHIPS
-            self.chip_number   = acsconstants.SBC_CHIP_NUMBER
-            self.header_number = acsconstants.HEADER_NUMBER
+            self.n_chips        = acsconstants.SBC_N_CHIPS
+            self.header_numbers = acsconstants.SBC_HEADER_NUMBER
 
         nRows0 = self.n_chips
         nCols0 = 1
@@ -186,21 +186,28 @@ class WCSAlignment:
                 for jj in range(self.n_chips):
                     startTime = time.time()
 
-                    ver = self.header_number[jj]
+                    ver = self.header_numbers[jj]
                     jjj = self.n_chips - ver ## Index for plotting
 
                     hdu = hduList['SCI', ver]
 
+                    k = 1
+
+                    chipLabel = None
                     if (self.detectorName == 'WFC'):
                         chipLabel = acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj])
                         title = '{0:s} --- {1:s}'.format(rootname, chipLabel)
 
                         k = int(hdu.header['CCDCHIP'])
+                    elif (self.detectorName == 'SBC'):
+                        chipLabel = self.detectorName
+
+                    naxis1 = int(hdu.header['NAXIS1'])
+                    naxis2 = int(hdu.header['NAXIS2'])
 
                     # Zero point of the y coordinates.
                     if (ver == 1):
                         yzp = 0.0
-                        naxis2 = int(hdu.header['NAXIS2'])
                     else:
                         yzp += float(naxis2)
 
@@ -212,7 +219,6 @@ class WCSAlignment:
 
                     axes0[jjj,0].imshow(image0, cmap=WCSAlignment.cMap0, aspect='equal', vmin=vmin0, vmax=vmax0,
                                         origin='lower')
-
 
                     axes0[jjj,0].set_title(title)
 
@@ -238,13 +244,14 @@ class WCSAlignment:
                     ax1.text(chipMidPoint[0], chipMidPoint[1], chipLabel, color=acsconstants.WFC_COLORS[jj],
                              ha='center', va='center', zorder=WCSAlignment.zorder1)
 
-                    if (acsconstants.CHIP_POSITIONS[jj] == 'bottom'):
+                    if (((self.detectorName == 'WFC') and (acsconstants.CHIP_POSITIONS[jj] == 'bottom'))
+                            or (self.detectorName == 'SBC')):
                         originPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 0, 0))
-                        xAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 4096, 0))
-                        yAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 0, 2048))
+                        xAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, naxis1, 0))
+                        yAxisPixRef = np.array(wcs.utils.pixel_to_pixel(wcsIm, self.wcsRef, 0, naxis2))
 
                         xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
-                        yAxisPixRef = originPixRef + 2.5 * (yAxisPixRef - originPixRef)
+                        yAxisPixRef = originPixRef + yAxisExtendFactor * (yAxisPixRef - originPixRef)
 
                         ax1.annotate(r'$x$', color='r', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
                                      textcoords='data', ha='center', va='center',
@@ -664,7 +671,7 @@ class WCSAlignment:
 
                     plotFilename2 = "{0:s}/plot_{1:s}_matchResidualsXY.pdf".format(outDir, rootname)
 
-                    self._plotMatchResidualsXY(xyMatches, residuals, plotFilename2, rootname)
+                    self._plotMatchResidualsXY(xyMatches, residuals, plotFilename2, rootname, xMax=naxis2)
 
                     df_hst1pass.drop(columns=['x_im', 'y_im']).to_csv(outTableFilename, index=False)
 
@@ -701,7 +708,7 @@ class WCSAlignment:
         del f
         gc.collect()
 
-    def _plotMatchResidualsXY(self, coordinates, residuals, plotFilename, rootname, markerSize=1):
+    def _plotMatchResidualsXY(self, coordinates, residuals, plotFilename, rootname, markerSize=1, xMax=4096):
         ## Plotting match residuals
         nRows2 = 2
         nCols2 = 2
@@ -715,7 +722,6 @@ class WCSAlignment:
         yLabels = [r'$\Delta U$ [pix]', r'$\Delta V$ [pix]']
 
         xMin = 0
-        xMax = 4096
 
         dX, dMX = 1000, 200
         dY, dMY = 2, 0.5

@@ -12,8 +12,7 @@ from astroquery.gaia import Gaia
 from copy import deepcopy
 import gc
 from matplotlib.backends.backend_pdf import PdfPages
-import matplotlib.pyplot as plt
-from matplotlib.ticker import AutoLocator, AutoMinorLocator, MultipleLocator
+from matplotlib import pyplot as plt, ticker
 import multiprocessing as mp
 import numpy as np
 import os
@@ -37,20 +36,8 @@ WIDTH   = HEIGHT
 N_PARS_LINE  = 2
 N_PARS_CONST = 1
 
-## For cross-matching, select only Gaia sources with good astrometry_old measurements
-MIN_RUWE = 0.8
-MAX_RUWE = 1.2
-
 CHIPS   = acsconstants.CHIP_NUMBER
 HEADERS = acsconstants.HEADER_NUMBER # hdu[SCI, x]
-X0      = 2048.00
-Y0      = np.array([1024.0, 2048.0+1024.0])
-
-XRef = X0
-YRef = Y0[0]
-
-scalerX = 2048.0
-scalerY = 1024.0
 
 N_ITER_OUTER = 10
 N_ITER_INNER = 100
@@ -72,7 +59,7 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
-                 cross_match=True):
+                 cross_match=True, min_ruwe=0.8, max_ruwe=1.2):
         self.individualZP  = individualZP
         self.refCat        = deepcopy(referenceCatalog)
         self.wcsRef        = deepcopy(referenceWCS)
@@ -106,11 +93,14 @@ class SIPEstimator:
             Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"
             Gaia.ROW_LIMIT       = -1
 
+            self.min_ruwe = min_ruwe
+            self.max_ruwe = max_ruwe
+
             coord = SkyCoord(ra=self.alpha0, dec=self.delta0, frame='icrs')
 
             g = Gaia.query_object_async(coordinate=coord, width=WIDTH, height=HEIGHT)
 
-            gaia_selection = (g['ruwe'] >= MIN_RUWE) & (g['ruwe'] <= MAX_RUWE)
+            gaia_selection = (g['ruwe'] >= self.min_ruwe) & (g['ruwe'] <= self.max_ruwe)
 
             g = g[gaia_selection]
 
@@ -123,8 +113,15 @@ class SIPEstimator:
         if (not self.individualZP):
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
 
-    def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, outDir='.', **kwargs):
-        addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+    def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, addendumFilename=None, detectorName='WFC',
+                            outDir='.', **kwargs):
+        if (addendumFilename is None):
+            addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+
+        self.detectorName = detectorName
+        self._setDetectorParameters()
+        print(self.n_chips, self.chip_numbers, self.header_numbers, self.chip_labels,
+              self.X0, self.Y0, self.XRef, self.YRef, self.scalerX, self.scalerY)
 
         baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
 
@@ -143,10 +140,10 @@ class SIPEstimator:
 
         ## We use the observation time, in combination with the proper motions to move
         ## the coordinates into the time
-        self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
-        self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+        self.refCat['xt'] = self.refCat['x'].values + self.refCat['pm_x'].values * dt
+        self.refCat['yt'] = self.refCat['y'].values + self.refCat['pm_y'].values * dt
 
-        hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+        hst1pass = table.hstack([ascii.read(hst1passFile, format='csv'), ascii.read(addendumFilename, format='csv')])
 
         okayToProceed, nGoodData = self._getOkayToProceed(hst1pass)
 
@@ -166,10 +163,11 @@ class SIPEstimator:
                 xSize1 = 12
                 ySize1 = xSize1
 
-                nRows = 2
+                nRows = self.n_chips
                 nCols = 1
 
-                fig1, axes = plt.subplots(figsize=(xSize1, ySize1), nrows=nRows, ncols=nCols, rasterized=True)
+                fig1, axes = plt.subplots(figsize=(xSize1, ySize1), nrows=nRows, ncols=nCols, rasterized=True,
+                                          squeeze=False)
 
                 ## Save the old match residuals before it is wiped out with nans
                 delX = hst1pass['xPred'] - hst1pass['xRef']
@@ -201,23 +199,27 @@ class SIPEstimator:
                     dxs, dys, rolls = [], [], []
 
                 textResults = ""
-                for jj, (chip, ver, chipTitle) in enumerate(zip(CHIPS, HEADERS, acsconstants.WFC_LABELS)):
+                for jj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
+                                                                self.header_numbers,
+                                                                self.chip_labels)):
                     startTime = time.time()
 
-                    jjj = acsconstants.N_CHIPS - ver  ## Index for plotting
+                    jjj = self.n_chips - ver  ## Index for plotting
 
                     hdu = hduList['SCI', ver]
 
-                    k = int(hdu.header['CCDCHIP'])
+                    k = 1
+                    if (self.detectorName == 'WFC'):
+                        k = int(hdu.header['CCDCHIP'])
+
+                    naxis1 = int(hdu.header['NAXIS1'])
+                    naxis2 = int(hdu.header['NAXIS2'])
 
                     ## Zero point of the y coordinates.
                     if (ver == 1):
                         yzp    = 0.0
-                        naxis2 = int(hdu.header['NAXIS2'])
                     else:
                         yzp += float(naxis2)
-
-                        naxis2 = int(hdu.header['NAXIS2'])
 
                     orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
                     vaFactor = float(hdu.header['VAFACTOR'])
@@ -233,17 +235,20 @@ class SIPEstimator:
 
                     print("CHIP:", chipTitle, "P_ORDER:", pOrder, "N_STARS:", nData)
 
-                    xi  = self.refCat[refStarIdx]['xt'] / vaFactor
-                    eta = self.refCat[refStarIdx]['yt'] / vaFactor
+                    xi  = self.refCat.iloc[refStarIdx]['xt'] / vaFactor
+                    eta = self.refCat.iloc[refStarIdx]['yt'] / vaFactor
 
-                    XC = hst1pass['X'][selection] - X0
-                    YC = hst1pass['Y'][selection] - Y0[jj]
+                    XC = hst1pass['X'][selection] - self.X0
+                    YC = hst1pass['Y'][selection] - self.Y0[jj]
 
-                    if self.make_lithographic_and_filter_mask_corrections:
+                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
-                                                               hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                                                                     hst1pass['Y'][selection].value - yzp,
+                                                                     self.XRef * 2, self.YRef * 2)).T
                         fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], hst1pass['X'][selection].value,
-                                                               hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                                                                     hst1pass['Y'][selection].value - yzp,
+                                                                     self.XRef * 2, self.YRef * 2)).T
+
 
                         ## print(dcorr)
                         ## print(fcorr)
@@ -258,7 +263,7 @@ class SIPEstimator:
                     xSize = 8
                     ySize = xSize
 
-                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
+                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
 
                     plotFilename1 = "{0:s}/plot_{1:s}_chip{2:d}_pOrder{3:d}_residualDistribution.pdf".format(outDir,
                                                                                                              baseImageFilename,
@@ -281,8 +286,8 @@ class SIPEstimator:
                     sx, sy, roll = xi0[0], eta0[0], np.deg2rad(orientat)
 
                     ## Initialize the reference coordinates
-                    xiRef  = deepcopy(xi)
-                    etaRef = deepcopy(eta)
+                    xiRef  = deepcopy(xi.values)
+                    etaRef = deepcopy(eta.values)
 
                     ## Initialize the raw coordinates
                     xyRaw = np.vstack([XC, YC]).T
@@ -307,250 +312,259 @@ class SIPEstimator:
                         dxs, dys, rolls = [], [], []
 
                     nIterTotal = 0
+                    weightSum  = np.inf
+                    stop_outer = False
                     for iteration in range(N_ITER_OUTER):
-                        if (self.individualZP or (chip == 2)):
-                            dxs.append(sx)
-                            dys.append(sy)
-                            rolls.append(roll)
+                        if not stop_outer:
+                            if (self.individualZP or (chip == 2)):
+                                dxs.append(sx)
+                                dys.append(sy)
+                                rolls.append(roll)
 
-                            xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
-                        else:
-                            for (sx, sy, roll) in zip(dxs, dys, rolls):
                                 xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
-
-                        for iteration2 in range(N_ITER_INNER):
-                            nIterTotal += 1
-
-                            nStars = xiRef.size
-
-                            ## Initialize the linear regression
-                            reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
-
-                            reg.fit(X, xiRef / scalerX, sample_weight=weights)
-
-                            coeffsA = reg.coef_ * scalerX / scalerArray
-
-                            reg.fit(X, etaRef / scalerY, sample_weight=weights)
-
-                            coeffsB = reg.coef_ * scalerY / scalerArray
-
-                            coeffs = np.zeros((coeffsA.size + coeffsB.size))
-
-                            coeffs[0::2] = coeffsA
-                            coeffs[1::2] = coeffsB
-
-                            xiPred  = np.matmul(X * scalerArray, coeffs[0::2])
-                            etaPred = np.matmul(X * scalerArray, coeffs[1::2])
-
-                            ## Residuals already in pixel and in image axis
-                            residualsXi  = xiRef - xiPred
-                            residualsEta = etaRef - etaPred
-
-                            rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
-                            rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
-
-                            residuals = np.vstack([residualsXi, residualsEta]).T
-
-                            ## Use the weights to estimate the mean and covariance matrix of the residual
-                            ## distribution
-                            mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
-
-                            ## Calculate the Mahalanobis Distance, i.e. standardized distance
-                            ## from the center of the gaussian distribution
-                            z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
-
-                            ## We now use the z statistics to re-calculate the weights
-                            weights = stat.wdecay(z)
-
-                            ## What we now call 'retained' are those stars with full weight
-                            retained0 = weights >= 1.0
-
-                            ## We have non-full weight stars but non-zero weights
-                            nonFull = (~retained0) & (weights > 0)
-
-                            ## Finally those stars with zero weights
-                            rejected = weights <= 0
-
-                            weightSum = np.sum(weights)
-
-                            weightSumDiff = np.abs(weightSum - previousWeightSum) / weightSum
-
-                            ## Assign the current weight summation for the next iteration
-                            previousWeightSum = weightSum
-
-                            print(baseImageFilename, k, pOrder, iteration + 1, iteration2 + 1,
-                                  '{0:.3e} {1:.3e} {2:.3e}'.format(dxs[-1], dys[-1], rolls[-1]),
-                                  "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (xi.size)),
-                                  "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum))
-
-                            fig = plt.figure(figsize=(xSize, ySize), rasterized=True)
-
-                            ax = fig.add_subplot(111)
-
-                            ax.plot(residuals[rejected][:, 0], residuals[rejected][:, 1], '.', markersize=markerSize,
-                                    label=r'$w = 0$', color=discardedColor)
-                            ax.plot(residuals[nonFull][:, 0], residuals[nonFull][:, 1], '.', markersize=markerSize,
-                                    label=r'$0 < w < 1$', color=nonFullColor)
-                            ax.plot(residuals[retained0][:, 0], residuals[retained0][:, 1], '.', markersize=markerSize,
-                                    label=r'$w = 1$', color=retainedColor)
-
-                            ax.axhline()
-                            ax.axvline()
-
-                            xMin1, xMax1 = ax.get_xlim()
-                            yMin1, yMax1 = ax.get_ylim()
-
-                            maxRange = np.nanmax(np.abs(np.array([xMin1, xMax1, yMin1, yMax1])))
-
-                            ax.set_xlim(-maxRange, +maxRange)
-                            ax.set_ylim(-maxRange, +maxRange)
-
-                            ax.set_aspect('equal')
-
-                            ax.set_xlabel(r'$\Delta X$ [pix]')
-                            ax.set_ylabel(r'$\Delta Y$ [pix]')
-
-                            ax.xaxis.set_major_locator(AutoLocator())
-                            ax.xaxis.set_minor_locator(AutoMinorLocator())
-
-                            ax.yaxis.set_major_locator(AutoLocator())
-                            ax.yaxis.set_minor_locator(AutoMinorLocator())
-
-                            ax.legend(frameon=True)
-
-                            ax.set_title(
-                                '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(baseImageFilename, chipTitle,
-                                                                                             pOrder, iteration + 1,
-                                                                                             iteration2 + 1))
-
-                            pp1.savefig(fig)
-
-                            plt.close(fig=fig)
-
-                            ## Plotting residuals
-                            xSize2 = 12
-                            ySize2 = 0.5 * xSize2
-
-                            nRows2 = 2
-                            nCols2 = 2
-
-                            fig2, axes2 = plt.subplots(figsize=(xSize2, ySize2), nrows=nRows2, ncols=nCols2,
-                                                       rasterized=True)
-
-                            xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
-                            yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
-
-                            XY0 = np.array([X0, Y0[0]])
-
-                            xMin = np.array([-2048, -1024])
-                            xMax = np.array([+2048, +1024])
-
-                            yMin = +np.inf
-                            yMax = -np.inf
-
-                            for axis1 in range(NAXIS):
-                                for axis2 in range(NAXIS):
-                                    coordinatesDiscarded = xyRaw[rejected][:, axis2]
-                                    residualsDiscarded = residuals[rejected][:, axis1]
-
-                                    coordinatesNonFull = xyRaw[nonFull][:, axis2]
-                                    residualsNonFull = residuals[nonFull][:, axis1]
-
-                                    coordinatesRetained = xyRaw[retained0][:, axis2]
-                                    residualsRetained = residuals[retained0][:, axis1]
-
-                                    mean = np.nanmean(residuals[retained0][:, axis1])
-                                    stdDev = np.nanstd(residuals[retained0][:, axis1])
-
-                                    axes2[axis1, axis2].plot(coordinatesDiscarded, residualsDiscarded, '.',
-                                                             markersize=markerSize, zorder=1, label=r'$w = 0$',
-                                                             color=discardedColor)
-                                    axes2[axis1, axis2].plot(coordinatesNonFull, residualsNonFull, '.',
-                                                             markersize=markerSize, zorder=1, label=r'$0 < w < 1$',
-                                                             color=nonFullColor)
-                                    axes2[axis1, axis2].plot(coordinatesRetained, residualsRetained, '.',
-                                                             markersize=markerSize, zorder=1, label=r'$w = 1$',
-                                                             color=retainedColor)
-
-                                    axes2[axis1, axis2].axhline(0,
-                                                                color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
-                                                                linestyle='--', zorder=2)
-
-                                    axes2[axis1, axis2].axhline(mean, color='r', linestyle='-', zorder=3)
-
-                                    ## xMin, xMax = axes2[axis1,axis2].get_xlim()
-
-                                    resMin = mean - stdDev
-                                    resMax = mean + stdDev
-
-                                    yMin = np.nanmin(np.array([yMin, mean - 5.0 * stdDev, np.nanmin(residuals)]))
-                                    yMax = np.nanmax(np.array([yMax, mean + 5.0 * stdDev, np.nanmax(residuals)]))
-
-                                    axes2[axis1, axis2].fill_between([xMin[axis2], xMax[axis2]], [resMin, resMin],
-                                                                     y2=[resMax, resMax], alpha=0.2, zorder=3)
-
-                                    axes2[axis1, axis2].set_xlabel(xLabels[axis2])
-                                    axes2[axis1, axis2].set_ylabel(yLabels[axis1])
-
-                                    axes2[axis1, axis2].xaxis.set_major_locator(MultipleLocator(dX))
-                                    axes2[axis1, axis2].xaxis.set_minor_locator(MultipleLocator(dMX))
-
-                                    axes2[axis1, axis2].yaxis.set_major_locator(AutoLocator())
-                                    axes2[axis1, axis2].yaxis.set_minor_locator(AutoMinorLocator())
-
-                                    axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
-
-                            ## print("Y_MIN:", yMin, "Y_MAX:", yMax)
-
-                            yMaxMin = np.nanmax(np.abs(np.array([yMin, yMax])))
-
-                            for axis1 in range(NAXIS):
-                                for axis2 in range(NAXIS):
-                                    axes2[axis1, axis2].set_ylim([-yMaxMin, +yMaxMin])
-
-                            ## axes2[0,0].legend()
-
-                            axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
-
-                            axCommons.set_title(
-                                '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(baseImageFilename, chipTitle,
-                                                                                             pOrder, iteration + 1,
-                                                                                             iteration2 + 1))
-
-                            plt.subplots_adjust(wspace=0.25, hspace=0.3)
-
-                            pp2.savefig(fig2, bbox_inches='tight', dpi=300)
-
-                            plt.close(fig=fig2)
-
-                            del reg
-                            gc.collect()
-
-                            ## At the last iteration, re-calculate the shift and rolls
-                            ## if ((iteration2+1) == (N_ITER_INNER)):
-                            if ((weightSumDiff < 1.e-9) or (iteration2 + 1) == (N_ITER_INNER)):
-                                ## Shift and rotate the reference coordinates using the new
-                                ## zero-th order coefficients and rotation angle
-                                sx, sy = coeffs[0], coeffs[1]
-                                epsilon = np.arctan(coeffs[4] / coeffs[5])
-
-                                roll = -epsilon
-
-                                break
                             else:
-                                X = X[~rejected]
+                                for (sx, sy, roll) in zip(dxs, dys, rolls):
+                                    xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
 
-                                weights = weights[~rejected]
+                            for iteration2 in range(N_ITER_INNER):
+                                nIterTotal += 1
 
-                                xiRef = xiRef[~rejected]
-                                etaRef = etaRef[~rejected]
+                                nStars = xiRef.size
 
-                                xyRaw = xyRaw[~rejected]
+                                ## Initialize the linear regression
+                                reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
 
-                                indices = indices[~rejected]
+                                reg.fit(X, xiRef / self.scalerX, sample_weight=weights)
 
-                        if (not (self.individualZP or (chip == 2))):
-                            break
+                                coeffsA = reg.coef_ * self.scalerX / scalerArray
+
+                                reg.fit(X, etaRef / self.scalerY, sample_weight=weights)
+
+                                coeffsB = reg.coef_ * self.scalerY / scalerArray
+
+                                xiPred  = np.matmul(X * scalerArray, coeffsA)
+                                etaPred = np.matmul(X * scalerArray, coeffsB)
+
+                                ## Residuals already in pixel and in image axis
+                                residualsXi  = xiRef - xiPred
+                                residualsEta = etaRef - etaPred
+
+                                rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
+                                rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
+
+                                residuals = np.vstack([residualsXi, residualsEta]).T
+
+                                ## Use the weights to estimate the mean and covariance matrix of the residual
+                                ## distribution
+                                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
+
+                                ## Calculate the Mahalanobis Distance, i.e. standardized distance
+                                ## from the center of the gaussian distribution
+                                z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+
+                                ## We now use the z statistics to re-calculate the weights
+                                weights = stat.wdecay(z)
+
+                                ## What we now call 'retained' are those stars with full weight
+                                retained0 = weights >= 1.0
+
+                                ## We have non-full weight stars but non-zero weights
+                                nonFull = (~retained0) & (weights > 0)
+
+                                ## Finally those stars with zero weights
+                                rejected = weights <= 0
+
+                                weightSum = np.sum(weights)
+
+                                weightSumDiff = np.abs(weightSum - previousWeightSum) / weightSum
+
+                                ## Assign the current weight summation for the next iteration
+                                previousWeightSum = weightSum
+
+                                print(baseImageFilename, k, pOrder, iteration + 1, iteration2 + 1,
+                                      '{0:.3e} {1:.3e} {2:.3e}'.format(dxs[-1], dys[-1], rolls[-1]),
+                                      "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (xi.size)),
+                                      "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum))
+
+                                fig = plt.figure(figsize=(xSize, ySize), rasterized=True)
+
+                                ax = fig.add_subplot(111)
+
+                                ax.plot(residuals[rejected][:, 0], residuals[rejected][:, 1], '.', markersize=markerSize,
+                                        label=r'$w = 0$', color=discardedColor)
+                                ax.plot(residuals[nonFull][:, 0], residuals[nonFull][:, 1], '.', markersize=markerSize,
+                                        label=r'$0 < w < 1$', color=nonFullColor)
+                                ax.plot(residuals[retained0][:, 0], residuals[retained0][:, 1], '.', markersize=markerSize,
+                                        label=r'$w = 1$', color=retainedColor)
+
+                                ax.axhline()
+                                ax.axvline()
+
+                                xMin1, xMax1 = ax.get_xlim()
+                                yMin1, yMax1 = ax.get_ylim()
+
+                                maxRange = np.nanmax(np.abs(np.array([xMin1, xMax1, yMin1, yMax1])))
+
+                                ax.set_xlim(-maxRange, +maxRange)
+                                ax.set_ylim(-maxRange, +maxRange)
+
+                                ax.set_aspect('equal')
+
+                                ax.set_xlabel(r'$\Delta X$ [pix]')
+                                ax.set_ylabel(r'$\Delta Y$ [pix]')
+
+                                ax.xaxis.set_major_locator(ticker.AutoLocator())
+                                ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
+
+                                ax.yaxis.set_major_locator(ticker.AutoLocator())
+                                ax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
+
+                                ax.legend(frameon=True)
+
+                                ax.set_title(
+                                    '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(baseImageFilename, chipTitle,
+                                                                                                 pOrder, iteration + 1,
+                                                                                                 iteration2 + 1))
+
+                                pp1.savefig(fig)
+
+                                plt.close(fig=fig)
+
+                                ## Plotting residuals
+                                xSize2 = 12
+                                ySize2 = 0.5 * xSize2
+
+                                nRows2 = 2
+                                nCols2 = 2
+
+                                fig2, axes2 = plt.subplots(figsize=(xSize2, ySize2), nrows=nRows2, ncols=nCols2,
+                                                           rasterized=True)
+
+                                xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
+                                yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
+
+                                XY0 = np.array([self.X0, self.Y0[0]])
+
+                                xMin = np.array([-2048, -1024])
+                                xMax = np.array([+2048, +1024])
+
+                                yMin = +np.inf
+                                yMax = -np.inf
+
+                                for axis1 in range(NAXIS):
+                                    for axis2 in range(NAXIS):
+                                        coordinatesDiscarded = xyRaw[rejected][:, axis2]
+                                        residualsDiscarded = residuals[rejected][:, axis1]
+
+                                        coordinatesNonFull = xyRaw[nonFull][:, axis2]
+                                        residualsNonFull = residuals[nonFull][:, axis1]
+
+                                        coordinatesRetained = xyRaw[retained0][:, axis2]
+                                        residualsRetained = residuals[retained0][:, axis1]
+
+                                        mean = np.nanmean(residuals[retained0][:, axis1])
+                                        stdDev = np.nanstd(residuals[retained0][:, axis1])
+
+                                        axes2[axis1, axis2].plot(coordinatesDiscarded, residualsDiscarded, '.',
+                                                                 markersize=markerSize, zorder=1, label=r'$w = 0$',
+                                                                 color=discardedColor)
+                                        axes2[axis1, axis2].plot(coordinatesNonFull, residualsNonFull, '.',
+                                                                 markersize=markerSize, zorder=1, label=r'$0 < w < 1$',
+                                                                 color=nonFullColor)
+                                        axes2[axis1, axis2].plot(coordinatesRetained, residualsRetained, '.',
+                                                                 markersize=markerSize, zorder=1, label=r'$w = 1$',
+                                                                 color=retainedColor)
+
+                                        axes2[axis1, axis2].axhline(0,
+                                                                    color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0],
+                                                                    linestyle='--', zorder=2)
+
+                                        axes2[axis1, axis2].axhline(mean, color='r', linestyle='-', zorder=3)
+
+                                        ## xMin, xMax = axes2[axis1,axis2].get_xlim()
+
+                                        resMin = mean - stdDev
+                                        resMax = mean + stdDev
+
+                                        yMin = np.nanmin(np.array([yMin, mean - 5.0 * stdDev, np.nanmin(residuals)]))
+                                        yMax = np.nanmax(np.array([yMax, mean + 5.0 * stdDev, np.nanmax(residuals)]))
+
+                                        axes2[axis1, axis2].fill_between([xMin[axis2], xMax[axis2]], [resMin, resMin],
+                                                                         y2=[resMax, resMax], alpha=0.2, zorder=3)
+
+                                        axes2[axis1, axis2].set_xlabel(xLabels[axis2])
+                                        axes2[axis1, axis2].set_ylabel(yLabels[axis1])
+
+                                        axes2[axis1, axis2].xaxis.set_major_locator(ticker.MultipleLocator(dX))
+                                        axes2[axis1, axis2].xaxis.set_minor_locator(ticker.MultipleLocator(dMX))
+
+                                        axes2[axis1, axis2].yaxis.set_major_locator(ticker.AutoLocator())
+                                        axes2[axis1, axis2].yaxis.set_minor_locator(ticker.AutoMinorLocator())
+
+                                        axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
+
+                                ## print("Y_MIN:", yMin, "Y_MAX:", yMax)
+
+                                yMaxMin = np.nanmax(np.abs(np.array([yMin, yMax])))
+
+                                for axis1 in range(NAXIS):
+                                    for axis2 in range(NAXIS):
+                                        axes2[axis1, axis2].set_ylim([-yMaxMin, +yMaxMin])
+
+                                ## axes2[0,0].legend()
+
+                                axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
+
+                                axCommons.set_title(
+                                    '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(baseImageFilename, chipTitle,
+                                                                                                 pOrder, iteration + 1,
+                                                                                                 iteration2 + 1))
+
+                                plt.subplots_adjust(wspace=0.25, hspace=0.3)
+
+                                pp2.savefig(fig2, bbox_inches='tight', dpi=300)
+
+                                plt.close(fig=fig2)
+
+                                del reg
+                                gc.collect()
+
+                                if (weightSum >= X.shape[1]):
+                                    coeffs = np.zeros((coeffsA.size + coeffsB.size))
+
+                                    coeffs[0::2] = coeffsA
+                                    coeffs[1::2] = coeffsB
+                                else:
+                                    print("STOPPING OUTER ITERATION")
+                                    stop_outer = True
+                                    break
+
+                                ## At the last iteration, re-calculate the shift and rolls
+                                ## if ((iteration2+1) == (N_ITER_INNER)):
+                                if ((weightSumDiff < 1.e-9) or ((iteration2 + 1) == N_ITER_INNER) or
+                                        (weightSum <= (X.shape[1] + 1))):
+                                    ## Shift and rotate the reference coordinates using the new
+                                    ## zero-th order coefficients and rotation angle
+                                    sx, sy = coeffs[0], coeffs[1]
+                                    epsilon = np.arctan(coeffs[4] / coeffs[5])
+
+                                    roll = -epsilon
+
+                                    break
+                                else:
+                                    X = X[~rejected]
+
+                                    weights = weights[~rejected]
+
+                                    xiRef = xiRef[~rejected]
+                                    etaRef = etaRef[~rejected]
+
+                                    xyRaw = xyRaw[~rejected]
+
+                                    indices = indices[~rejected]
+
+                            if (self.detectorName == 'WFC') and (not (self.individualZP or (chip == 2))):
+                                break
 
                     ## print("SHIFTS_X:", dxs)
                     ## print("SHIFTS_Y:", dys)
@@ -563,23 +577,25 @@ class SIPEstimator:
 
                     refStarIdx = hst1pass[selection]['refCatIndex'].value
 
-                    xiRef  = self.refCat[refStarIdx]['xt'] / vaFactor
-                    etaRef = self.refCat[refStarIdx]['yt'] / vaFactor
+                    xiRef  = self.refCat.iloc[refStarIdx]['xt'] / vaFactor
+                    etaRef = self.refCat.iloc[refStarIdx]['yt'] / vaFactor
 
-                    XC = hst1pass['X'][selection] - X0
-                    YC = hst1pass['Y'][selection] - Y0[jj]
+                    XC = hst1pass['X'][selection] - self.X0
+                    YC = hst1pass['Y'][selection] - self.Y0[jj]
 
-                    if self.make_lithographic_and_filter_mask_corrections:
+                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
-                                                               hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                                                                     hst1pass['Y'][selection].value - yzp,
+                                                                     self.XRef * 2, self.YRef * 2)).T
                         fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], hst1pass['X'][selection].value,
-                                                               hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                                                                     hst1pass['Y'][selection].value - yzp,
+                                                                     self.XRef * 2, self.YRef * 2)).T
 
                         ## Apply the lithographic mask correction
                         XC -= (dcorr[:, 2] - fcorr[:, 2])
                         YC -= (dcorr[:, 3] - fcorr[:, 3])
 
-                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
+                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
 
                     for iiii in range(len(dxs)):
                         sx   = dxs[iiii]
@@ -633,8 +649,8 @@ class SIPEstimator:
 
                         ## The reference coordinates used for regression of the CD matrix is relative to the current
                         ## CRVAL1, CRVAL2 coordinates
-                        xiRef  = (self.refCat['xi'][refStarIdx].value  * u.arcsec).to(u.deg) / vaFactor
-                        etaRef = (self.refCat['eta'][refStarIdx].value * u.arcsec).to(u.deg) / vaFactor
+                        xiRef  = (self.refCat.iloc[refStarIdx]['xi'].values  * u.arcsec).to(u.deg) / vaFactor
+                        etaRef = (self.refCat.iloc[refStarIdx]['eta'].values * u.arcsec).to(u.deg) / vaFactor
 
                         ## Store the reference coordinates back in pixel scale
                         hst1pass['xiRef'][selection] = xiRef.to_value(u.arcsec) / acsconstants.ACS_PLATESCALE.to_value(
@@ -738,13 +754,14 @@ class SIPEstimator:
 
                     vmin, vmax = ZScaleInterval(contrast=0.10, max_iterations=5).get_limits(image)
 
-                    axes[jjj].imshow(image, cmap=cMap, aspect='equal', vmin=vmin, vmax=vmax, origin='lower', rasterized=True)
+                    axes[jjj, 0].imshow(image, cmap=cMap, aspect='equal', vmin=vmin, vmax=vmax, origin='lower',
+                                        rasterized=True)
 
                     xyPosRetained = np.vstack([hst1pass[retained]['X'].value, hst1pass[retained]['Y'].value - yzp]).T
 
                     aperturesRetained = CircularAperture(xyPosRetained, r=20.0)
 
-                    aperturesRetained.plot(color='#1b9e77', lw=1, alpha=1, ax=axes[jjj],
+                    aperturesRetained.plot(color='#1b9e77', lw=1, alpha=1, ax=axes[jjj,0],
                                            rasterized=True);  ## GREENS are accepted sources
 
                     xyPosRejected = np.vstack([hst1pass[(~retained) & selection]['X'].value,
@@ -752,16 +769,16 @@ class SIPEstimator:
 
                     aperturesRejected = CircularAperture(xyPosRejected, r=15.0)
 
-                    aperturesRejected.plot(color='#d95f02', lw=1, alpha=1, ax=axes[jjj],
+                    aperturesRejected.plot(color='#d95f02', lw=1, alpha=1, ax=axes[jjj,0],
                                            rasterized=True);  ## BROWNS are accepted sources
 
-                    axes[jjj].set_title('{0:s} --- {1:s}'.format(baseImageFilename, chipTitle))
+                    axes[jjj,0].set_title('{0:s} --- {1:s}'.format(baseImageFilename, chipTitle))
 
-                    axes[jjj].xaxis.set_major_locator(MultipleLocator(dX))
-                    axes[jjj].xaxis.set_minor_locator(MultipleLocator(dMX))
+                    axes[jjj,0].xaxis.set_major_locator(ticker.AutoLocator())
+                    axes[jjj,0].xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
-                    axes[jjj].yaxis.set_major_locator(MultipleLocator(dY))
-                    axes[jjj].yaxis.set_minor_locator(MultipleLocator(dMY))
+                    axes[jjj,0].yaxis.set_major_locator(ticker.AutoLocator())
+                    axes[jjj,0].yaxis.set_minor_locator(ticker.AutoMinorLocator())
 
                     elapsedTime = time.time() - startTime
                     print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
@@ -877,17 +894,17 @@ class SIPEstimator:
                     ax3[2, axis + 1].set_xlabel(resLabels[axis])
                     ax3[axis, 0].set_ylabel(resLabels[axis])
 
-                    ax3[2, axis + 1].xaxis.set_major_locator(MultipleLocator(dRes))
-                    ax3[2, axis + 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
+                    ax3[2, axis + 1].xaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                    ax3[2, axis + 1].xaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
 
-                    ax3[2, axis + 1].yaxis.set_major_locator(MultipleLocator(dY3))
-                    ax3[2, axis + 1].yaxis.set_minor_locator(MultipleLocator(dMY3))
+                    ax3[2, axis + 1].yaxis.set_major_locator(ticker.MultipleLocator(dY3))
+                    ax3[2, axis + 1].yaxis.set_minor_locator(ticker.MultipleLocator(dMY3))
 
-                    ax3[axis, 0].xaxis.set_major_locator(MultipleLocator(dX3))
-                    ax3[axis, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
+                    ax3[axis, 0].xaxis.set_major_locator(ticker.MultipleLocator(dX3))
+                    ax3[axis, 0].xaxis.set_minor_locator(ticker.MultipleLocator(dMX3))
 
-                    ax3[axis, 0].yaxis.set_major_locator(MultipleLocator(dRes))
-                    ax3[axis, 0].yaxis.set_minor_locator(MultipleLocator(dMRes))
+                    ax3[axis, 0].yaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                    ax3[axis, 0].yaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
 
                     ax3[2, axis + 1].set_xlim(resMin, resMax)
                     ax3[axis, 0].set_ylim(resMin, resMax)
@@ -895,10 +912,10 @@ class SIPEstimator:
                     ax3[axis, 0].axhline(y=0, linewidth=1)
                     ax3[2, axis+1].axvline(x=0, linewidth=1)
 
-                ax3[1, 1].xaxis.set_major_locator(MultipleLocator(dRes))
-                ax3[1, 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
-                ax3[1, 1].yaxis.set_major_locator(MultipleLocator(dRes))
-                ax3[1, 1].yaxis.set_minor_locator(MultipleLocator(dMRes))
+                ax3[1, 1].xaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                ax3[1, 1].xaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
+                ax3[1, 1].yaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                ax3[1, 1].yaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
 
                 ax3[1, 1].axvline(x=0)
                 ax3[1, 1].axhline(y=0)
@@ -910,11 +927,11 @@ class SIPEstimator:
                 ax3[2,0].set_ylabel(r'eta [pix]')
 
                 for iii in range(3):
-                    ax3[iii,0].xaxis.set_major_locator(MultipleLocator(dX3))
-                    ax3[iii,0].xaxis.set_minor_locator(MultipleLocator(dMX3))
+                    ax3[iii,0].xaxis.set_major_locator(ticker.MultipleLocator(dX3))
+                    ax3[iii,0].xaxis.set_minor_locator(ticker.MultipleLocator(dMX3))
 
-                    ax3[2,iii].yaxis.set_major_locator(MultipleLocator(dY3))
-                    ax3[2,iii].yaxis.set_minor_locator(MultipleLocator(dMY3))
+                    ax3[2,iii].yaxis.set_major_locator(ticker.MultipleLocator(dY3))
+                    ax3[2,iii].yaxis.set_minor_locator(ticker.MultipleLocator(dMY3))
 
                 ax3[2,0].set_xlim(xMin3, xMax3)
                 ax3[2,0].set_ylim(yMin3, yMax3)
@@ -1055,16 +1072,16 @@ class SIPEstimator:
                     xi = self.refCat[refStarIdx]['xt'] / vaFactor
                     eta = self.refCat[refStarIdx]['yt'] / vaFactor
 
-                    XC = hst1pass['X'][selection] - X0
-                    YC = hst1pass['Y'][selection] - Y0[jj]
+                    XC = hst1pass['X'][selection] - self.X0
+                    YC = hst1pass['Y'][selection] - self.Y0[jj]
 
                     if self.make_lithographic_and_filter_mask_corrections:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
-                                                                     hst1pass['Y'][selection].value - yzp, XRef * 2,
-                                                                     YRef * 2)).T
+                                                                     hst1pass['Y'][selection].value - yzp,
+                                                                     self.XRef * 2, self.YRef * 2)).T
                         fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], hst1pass['X'][selection].value,
-                                                                     hst1pass['Y'][selection].value - yzp, XRef * 2,
-                                                                     YRef * 2)).T
+                                                                     hst1pass['Y'][selection].value - yzp,
+                                                                     self.XRef * 2, self.YRef * 2)).T
 
                         ## print(dcorr)
                         ## print(fcorr)
@@ -1076,7 +1093,7 @@ class SIPEstimator:
                         del dcorr
                         del fcorr
 
-                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=scalerX, scalerY=scalerY)
+                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
 
                     alpha0Im = float(hdu.header['CRVAL1'])
                     delta0Im = float(hdu.header['CRVAL2'])
@@ -1130,13 +1147,13 @@ class SIPEstimator:
                                 ## Initialize the linear regression
                                 reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
 
-                                reg.fit(X_train, xi_train / scalerX, sample_weight=weights)
+                                reg.fit(X_train, xi_train / self.scalerX, sample_weight=weights)
 
-                                coeffsA = reg.coef_ * scalerX / scalerArray
+                                coeffsA = reg.coef_ * self.scalerX / scalerArray
 
-                                reg.fit(X_train, eta_train / scalerY, sample_weight=weights)
+                                reg.fit(X_train, eta_train / self.scalerY, sample_weight=weights)
 
-                                coeffsB = reg.coef_ * scalerY / scalerArray
+                                coeffsB = reg.coef_ * self.scalerY / scalerArray
 
                                 coeffs = np.zeros((coeffsA.size + coeffsB.size))
 
@@ -1254,12 +1271,43 @@ class SIPEstimator:
                                                                                            convertTime(elapsedTime0)))
                 return outTableFilename
 
+    def _setDetectorParameters(self):
+        if (self.detectorName == 'WFC'):
+            self.n_chips        = acsconstants.N_CHIPS
+            self.chip_numbers   = acsconstants.CHIP_NUMBER
+            self.header_numbers = acsconstants.HEADER_NUMBER
+            self.chip_labels    = acsconstants.WFC_LABELS
+
+            self.X0 = 2048.00
+            self.Y0 = np.array([1024.0, 2048.0 + 1024.0])
+
+            self.XRef = self.X0
+            self.YRef = self.Y0[0]
+
+            self.scalerX = 2048.0
+            self.scalerY = 1024.0
+
+        elif (self.detectorName == 'SBC'):
+            self.n_chips        = acsconstants.SBC_N_CHIPS
+            self.chip_numbers   = acsconstants.SBC_CHIP_NUMBER
+            self.header_numbers = acsconstants.SBC_HEADER_NUMBER
+            self.chip_labels    = acsconstants.SBC_LABELS
+
+            self.X0 = 512.0
+            self.Y0 = np.array([512.0])
+
+            self.XRef = self.X0
+            self.YRef = self.Y0[0]
+
+            self.scalerX = 512.0
+            self.scalerY = 512.0
+
     def _getOkayToProceed(self, catalogue):
         matchRes = np.sqrt((catalogue['xPred'] - catalogue['xRef']) ** 2 + (catalogue['yPred'] - catalogue['yRef']) ** 2)
 
-        okays = np.zeros(CHIPS.size, dtype='bool')
-        nGoodData = np.zeros(CHIPS.size, dtype=int)
-        for jj, chip in enumerate(CHIPS):
+        okays = np.zeros(self.chip_numbers.size, dtype='bool')
+        nGoodData = np.zeros(self.chip_numbers.size, dtype=int)
+        for jj, chip in enumerate(self.chip_numbers):
             selection = (catalogue['k'] == chip) & (catalogue['refCatIndex'] >= 0) & (catalogue['q'] > 0) & (
                     catalogue['q'] <= self.qMax) & (~np.isnan(catalogue['nAppearances'])) & (
                                 catalogue['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
@@ -1311,15 +1359,16 @@ class SIPEstimator:
         tab['xi'] = np.nan
         tab['eta'] = np.nan
 
-        tab['alpha'][selection], tab['delta'][selection] = wcs.wcs_pix2world(tab[x][selection].value,
-                                                                             tab[y][selection].value, 1)
+        tab.loc[selection, 'alpha'], tab.loc[selection, 'delta'] = wcs.wcs_pix2world(tab.loc[selection, x].values,
+                                                                                     tab.loc[selection, y].values, 1)
 
-        xi, eta = coords.getNormalCoordinates(
-            SkyCoord(ra=tab['alpha'][selection].value * u.deg, dec=tab['delta'][selection].value * u.deg, frame='icrs'),
-            pqr0)
+        xi, eta = coords.getNormalCoordinates(SkyCoord(ra=tab.loc[selection, 'alpha'].values * u.deg,
+                                                       dec=tab.loc[selection, 'delta'].values * u.deg,
+                                                       frame='icrs'),
+                                              pqr0)
 
-        tab['xi'][selection] = xi.to_value(u.arcsec)
-        tab['eta'][selection] = eta.to_value(u.arcsec)
+        tab.loc[selection, 'xi']  = xi.to_value(u.arcsec)
+        tab.loc[selection, 'eta'] = eta.to_value(u.arcsec)
 
         return tab
 
@@ -1641,12 +1690,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     ax1.axvline(self.tKnot[ii], linewidth=1, linestyle='-', color=knotColors[0])
 
                 ax1.set_xlim(xMin, xMax)
-                ax1.xaxis.set_major_locator(AutoLocator())
-                ax1.xaxis.set_minor_locator(AutoMinorLocator())
+                ax1.xaxis.set_major_locator(ticker.AutoLocator())
+                ax1.xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
                 ax1.set_ylim(yMin, yMax)
-                ax1.yaxis.set_major_locator(MultipleLocator(dY))
-                ax1.yaxis.set_minor_locator(MultipleLocator(dMY))
+                ax1.yaxis.set_major_locator(ticker.MultipleLocator(dY))
+                ax1.yaxis.set_minor_locator(ticker.MultipleLocator(dMY))
 
                 ax1.set_xlabel(xLabel2);
                 ax1.set_ylabel(r'$B_{i,k}(t)$');
@@ -1890,11 +1939,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 ax.set_xlabel(r'$\Delta X$ [pix]')
                                 ax.set_ylabel(r'$\Delta Y$ [pix]')
 
-                                ax.xaxis.set_major_locator(AutoLocator())
-                                ax.xaxis.set_minor_locator(AutoMinorLocator())
+                                ax.xaxis.set_major_locator(ticker.AutoLocator())
+                                ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
-                                ax.yaxis.set_major_locator(AutoLocator())
-                                ax.yaxis.set_minor_locator(AutoMinorLocator())
+                                ax.yaxis.set_major_locator(ticker.AutoLocator())
+                                ax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
 
                                 ax.legend(frameon=True)
 
@@ -1964,11 +2013,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                         axes2[axis1, axis2].set_xlabel(xLabels[axis2])
                                         axes2[axis1, axis2].set_ylabel(yLabels[axis1])
 
-                                        axes2[axis1, axis2].xaxis.set_major_locator(MultipleLocator(dX))
-                                        axes2[axis1, axis2].xaxis.set_minor_locator(MultipleLocator(dMX))
+                                        axes2[axis1, axis2].xaxis.set_major_locator(ticker.MultipleLocator(dX))
+                                        axes2[axis1, axis2].xaxis.set_minor_locator(ticker.MultipleLocator(dMX))
 
-                                        axes2[axis1, axis2].yaxis.set_major_locator(AutoLocator())
-                                        axes2[axis1, axis2].yaxis.set_minor_locator(AutoMinorLocator())
+                                        axes2[axis1, axis2].yaxis.set_major_locator(ticker.AutoLocator())
+                                        axes2[axis1, axis2].yaxis.set_minor_locator(ticker.AutoMinorLocator())
 
                                         axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
 
@@ -2544,17 +2593,17 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 ax3[2, axis + 1].set_xlabel(resLabels[axis])
                                 ax3[axis, 0].set_ylabel(resLabels[axis])
 
-                                ax3[2, axis + 1].xaxis.set_major_locator(MultipleLocator(dRes))
-                                ax3[2, axis + 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
+                                ax3[2, axis + 1].xaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                                ax3[2, axis + 1].xaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
 
-                                ax3[2, axis + 1].yaxis.set_major_locator(MultipleLocator(dY3))
-                                ax3[2, axis + 1].yaxis.set_minor_locator(MultipleLocator(dMY3))
+                                ax3[2, axis + 1].yaxis.set_major_locator(ticker.MultipleLocator(dY3))
+                                ax3[2, axis + 1].yaxis.set_minor_locator(ticker.MultipleLocator(dMY3))
 
-                                ax3[axis, 0].xaxis.set_major_locator(MultipleLocator(dX3))
-                                ax3[axis, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
+                                ax3[axis, 0].xaxis.set_major_locator(ticker.MultipleLocator(dX3))
+                                ax3[axis, 0].xaxis.set_minor_locator(ticker.MultipleLocator(dMX3))
 
-                                ax3[axis, 0].yaxis.set_major_locator(MultipleLocator(dRes))
-                                ax3[axis, 0].yaxis.set_minor_locator(MultipleLocator(dMRes))
+                                ax3[axis, 0].yaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                                ax3[axis, 0].yaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
 
                                 ax3[2, axis + 1].set_xlim(resMin, resMax)
                                 ax3[axis, 0].set_ylim(resMin, resMax)
@@ -2562,10 +2611,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 ax3[axis, 0].axhline(y=0, linewidth=1)
                                 ax3[2, axis + 1].axvline(x=0, linewidth=1)
 
-                            ax3[1, 1].xaxis.set_major_locator(MultipleLocator(dRes))
-                            ax3[1, 1].xaxis.set_minor_locator(MultipleLocator(dMRes))
-                            ax3[1, 1].yaxis.set_major_locator(MultipleLocator(dRes))
-                            ax3[1, 1].yaxis.set_minor_locator(MultipleLocator(dMRes))
+                            ax3[1, 1].xaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                            ax3[1, 1].xaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
+                            ax3[1, 1].yaxis.set_major_locator(ticker.MultipleLocator(dRes))
+                            ax3[1, 1].yaxis.set_minor_locator(ticker.MultipleLocator(dMRes))
 
                             ax3[1, 1].axvline(x=0)
                             ax3[1, 1].axhline(y=0)
@@ -2577,11 +2626,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             ax3[2, 0].set_ylabel(r'eta [pix]')
 
                             for iii in range(3):
-                                ax3[iii, 0].xaxis.set_major_locator(MultipleLocator(dX3))
-                                ax3[iii, 0].xaxis.set_minor_locator(MultipleLocator(dMX3))
+                                ax3[iii, 0].xaxis.set_major_locator(ticker.MultipleLocator(dX3))
+                                ax3[iii, 0].xaxis.set_minor_locator(ticker.MultipleLocator(dMX3))
 
-                                ax3[2, iii].yaxis.set_major_locator(MultipleLocator(dY3))
-                                ax3[2, iii].yaxis.set_minor_locator(MultipleLocator(dMY3))
+                                ax3[2, iii].yaxis.set_major_locator(ticker.MultipleLocator(dY3))
+                                ax3[2, iii].yaxis.set_minor_locator(ticker.MultipleLocator(dMY3))
 
                             ax3[2, 0].set_xlim(xMin3, xMax3)
                             ax3[2, 0].set_ylim(yMin3, yMax3)
