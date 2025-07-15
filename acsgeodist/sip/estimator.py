@@ -120,8 +120,10 @@ class SIPEstimator:
 
         self.detectorName = detectorName
         self._setDetectorParameters()
+        '''
         print(self.n_chips, self.chip_numbers, self.header_numbers, self.chip_labels,
               self.X0, self.Y0, self.XRef, self.YRef, self.scalerX, self.scalerY)
+        ''';
 
         baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
 
@@ -1318,7 +1320,7 @@ class SIPEstimator:
             if (nGoodData[jj] > self.min_n_refstar):
                 okays[jj] = True
 
-            print(acsconstants.CHIP_LABEL(acsconstants.WFC[jj], acsconstants.CHIP_POSITIONS[jj]), "N_STARS =",
+            print(self.chip_labels[jj], "N_STARS =",
                   nGoodData[jj], "OKAY:", okays[jj])
 
         del selection
