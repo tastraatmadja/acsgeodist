@@ -785,6 +785,14 @@ class SIPEstimator:
                     elapsedTime = time.time() - startTime
                     print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
 
+                fitResultsFilename = '{0:s}/{1:s}_fitResults_pOrder{2:d}.txt'.format(outDir, baseImageFilename, pOrder)
+
+                f = open(fitResultsFilename, 'w')
+                f.write(textResults)
+                f.close()
+
+                print("Fit results written to", fitResultsFilename)
+
                 plt.subplots_adjust(wspace=0.0, hspace=0.15)
 
                 axCommons = plotting.drawCommonLabel(xLabel, yLabel, fig1, xPad=20, yPad=15)
