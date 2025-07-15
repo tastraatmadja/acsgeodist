@@ -125,10 +125,10 @@ class SIPEstimator:
               self.X0, self.Y0, self.XRef, self.YRef, self.scalerX, self.scalerY)
         ''';
 
-        baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
-
         hduList = fits.open(imageFilename)
 
+        rootname   = hduList[0].header['ROOTNAME']
+        filterName = hduList[0].header['FILTER1']
         tExp = float(hduList[0].header['EXPTIME'])
         tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
         t_acs = Time(tstring, scale='ut1', format='fits')
@@ -155,8 +155,8 @@ class SIPEstimator:
 
         if okayToProceed:
             ## Final table filename
-            outTableFilename = '{0:s}/{1:s}_hst1pass_stand_pOrder{2:d}_resids.csv'.format(outDir,
-                                                                                          baseImageFilename, pOrder)
+            outTableFilename = '{0:s}/{1:s}_hst1pass_stand_pOrder{2:d}_resids.csv'.format(outDir, rootname, pOrder)
+
 
             if (not os.path.exists(outTableFilename)):
                 startTime0 = time.time()
@@ -268,13 +268,13 @@ class SIPEstimator:
                     X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
 
                     plotFilename1 = "{0:s}/plot_{1:s}_chip{2:d}_pOrder{3:d}_residualDistribution.pdf".format(outDir,
-                                                                                                             baseImageFilename,
+                                                                                                             rootname,
                                                                                                              chip, pOrder)
 
                     pp1 = PdfPages(plotFilename1)
 
                     plotFilename2 = "{0:s}/plot_{1:s}_chip{2:d}_pOrder{3:d}_residualsXY.pdf".format(outDir,
-                                                                                                    baseImageFilename, chip,
+                                                                                                    rootname, chip,
                                                                                                     pOrder)
 
                     pp2 = PdfPages(plotFilename2)
@@ -383,7 +383,7 @@ class SIPEstimator:
                                 ## Assign the current weight summation for the next iteration
                                 previousWeightSum = weightSum
 
-                                print(baseImageFilename, k, pOrder, iteration + 1, iteration2 + 1,
+                                print(rootname, k, pOrder, iteration + 1, iteration2 + 1,
                                       '{0:.3e} {1:.3e} {2:.3e}'.format(dxs[-1], dys[-1], rolls[-1]),
                                       "N_STARS: {0:d}/{1:d}".format(xiRef[~rejected].size, (xi.size)),
                                       "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum))
@@ -424,7 +424,7 @@ class SIPEstimator:
                                 ax.legend(frameon=True)
 
                                 ax.set_title(
-                                    '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(baseImageFilename, chipTitle,
+                                    '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(rootname, chipTitle,
                                                                                                  pOrder, iteration + 1,
                                                                                                  iteration2 + 1))
 
@@ -518,7 +518,7 @@ class SIPEstimator:
                                 axCommons = plotting.drawCommonLabel('', '', fig2, xPad=0, yPad=0)
 
                                 axCommons.set_title(
-                                    '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(baseImageFilename, chipTitle,
+                                    '{0:s}, {1:s}, $p$ = {2:d}, iter1 {3:d}, iter2 {4:d}'.format(rootname, chipTitle,
                                                                                                  pOrder, iteration + 1,
                                                                                                  iteration2 + 1))
 
@@ -731,8 +731,8 @@ class SIPEstimator:
                         rmsEta = np.sqrt(stat.getWeightedAverage(hst1pass['resEta'][selection].value ** 2,
                                                                  hst1pass['weights'][selection].value))
 
-                    textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
-                        baseImageFilename, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
+                    textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
+                        rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
                     textResults += " {0:d} {1:d}".format(nIterTotal, nStars)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                     textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
@@ -774,7 +774,7 @@ class SIPEstimator:
                     aperturesRejected.plot(color='#d95f02', lw=1, alpha=1, ax=axes[jjj,0],
                                            rasterized=True);  ## BROWNS are accepted sources
 
-                    axes[jjj,0].set_title('{0:s} --- {1:s}'.format(baseImageFilename, chipTitle))
+                    axes[jjj,0].set_title('{0:s} --- {1:s}'.format(rootname, chipTitle))
 
                     axes[jjj,0].xaxis.set_major_locator(ticker.AutoLocator())
                     axes[jjj,0].xaxis.set_minor_locator(ticker.AutoMinorLocator())
@@ -785,7 +785,7 @@ class SIPEstimator:
                     elapsedTime = time.time() - startTime
                     print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
 
-                fitResultsFilename = '{0:s}/{1:s}_fitResults_pOrder{2:d}.txt'.format(outDir, baseImageFilename, pOrder)
+                fitResultsFilename = '{0:s}/{1:s}_fitResults_pOrder{2:d}.txt'.format(outDir, rootname, pOrder)
 
                 f = open(fitResultsFilename, 'w')
                 f.write(textResults)
@@ -797,7 +797,7 @@ class SIPEstimator:
 
                 axCommons = plotting.drawCommonLabel(xLabel, yLabel, fig1, xPad=20, yPad=15)
 
-                plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_retainedSources.pdf".format(outDir, baseImageFilename,
+                plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_retainedSources.pdf".format(outDir, rootname,
                                                                                           pOrder)
                 fig1.savefig(plotFilename3, bbox_inches='tight', dpi=300)
 
@@ -952,7 +952,7 @@ class SIPEstimator:
 
                 plt.subplots_adjust(wspace=0.0, hspace=0.0)
 
-                plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_retainedSources_commonCoordinates.pdf".format(outDir, baseImageFilename, pOrder)
+                plotFilename3 = "{0:s}/plot_{1:s}_pOrder{2:d}_retainedSources_commonCoordinates.pdf".format(outDir, rootname, pOrder)
 
                 fig3.savefig(plotFilename3, dpi=300, bbox_inches='tight')
 
