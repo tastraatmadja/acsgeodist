@@ -219,7 +219,7 @@ class SIPEstimator:
 
                     ## Zero point of the y coordinates.
                     if (ver == 1):
-                        yzp    = 0.0
+                        yzp = 0.0
                     else:
                         yzp += float(naxis2)
 
@@ -980,13 +980,17 @@ class SIPEstimator:
 
         return textResults
 
-    def crossValidateHST1PassFile(self, pOrder, nFolds, hst1passFile, imageFilename, outDir='.', **kwargs):
-        addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+    def crossValidateHST1PassFile(self, pOrder, nFolds, hst1passFile, imageFilename, addendumFilename=None,
+                                  detectorName='WFC', outDir='.', **kwargs):
+        if (addendumFilename is None):
+            addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
 
-        baseImageFilename = os.path.basename(hst1passFile).replace('_hst1pass_stand.csv', '')
+        self.detectorName = detectorName
+        self._setDetectorParameters()
 
         hduList = fits.open(imageFilename)
 
+        rootname = hduList[0].header['ROOTNAME']
         tExp = float(hduList[0].header['EXPTIME'])
         tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
         t_acs = Time(tstring, scale='ut1', format='fits')
@@ -1000,12 +1004,12 @@ class SIPEstimator:
 
         ## We use the observation time, in combination with the proper motions to move
         ## the coordinates into the time
-        self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
-        self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+        self.refCat['xt'] = self.refCat['x'].values + self.refCat['pm_x'].values * dt
+        self.refCat['yt'] = self.refCat['y'].values + self.refCat['pm_y'].values * dt
 
-        hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+        hst1pass = table.hstack([ascii.read(hst1passFile, format='csv'), ascii.read(addendumFilename, format='csv')])
 
-        hst1pass.sort('W')
+        hst1pass.sort('w')
 
         okayToProceed, nGoodData = self._getOkayToProceed(hst1pass)
 
@@ -1016,7 +1020,7 @@ class SIPEstimator:
         if okayToProceed:
             ## Final table filename
             outTableFilename = '{0:s}/{1:s}_crossValidation_pOrder{2:d}_nFolds{3:d}_resids.csv'.format(
-                outDir, baseImageFilename, pOrder, nFolds)
+                outDir, rootname, pOrder, nFolds)
 
             if (not os.path.exists(outTableFilename)):
                 startTime0 = time.time()
@@ -1051,19 +1055,23 @@ class SIPEstimator:
 
                 CVResiduals = []
 
-                for jj, (chip, ver, chipTitle) in enumerate(zip(CHIPS, HEADERS, acsconstants.WFC_LABELS)):
+                for jj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
+                                                                self.header_numbers,
+                                                                self.chip_labels)):
                     hdu = hduList['SCI', ver]
 
-                    k = int(hdu.header['CCDCHIP'])
+                    k = 1
+                    if (self.detectorName == 'WFC'):
+                        k = int(hdu.header['CCDCHIP'])
+
+                    naxis1 = int(hdu.header['NAXIS1'])
+                    naxis2 = int(hdu.header['NAXIS2'])
 
                     ## Zero point of the y coordinates.
                     if (ver == 1):
                         yzp = 0.0
-                        naxis2 = int(hdu.header['NAXIS2'])
                     else:
                         yzp += float(naxis2)
-
-                        naxis2 = int(hdu.header['NAXIS2'])
 
                     orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
                     vaFactor = float(hdu.header['VAFACTOR'])
@@ -1079,13 +1087,13 @@ class SIPEstimator:
 
                     print("CHIP:", chipTitle, "P_ORDER:", pOrder, "N_STARS:", nData)
 
-                    xi = self.refCat[refStarIdx]['xt'] / vaFactor
-                    eta = self.refCat[refStarIdx]['yt'] / vaFactor
+                    xi  = self.refCat.iloc[refStarIdx]['xt'].values / vaFactor
+                    eta = self.refCat.iloc[refStarIdx]['yt'].values / vaFactor
 
                     XC = hst1pass['X'][selection] - self.X0
                     YC = hst1pass['Y'][selection] - self.Y0[jj]
 
-                    if self.make_lithographic_and_filter_mask_corrections:
+                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
@@ -1211,7 +1219,7 @@ class SIPEstimator:
 
                                 ## Don't think we need these printouts
                                 '''
-                                print(baseImageFilename, k, pOrder, iteration + 1, iteration2 + 1,
+                                print(rootname, k, pOrder, iteration + 1, iteration2 + 1,
                                       '{0:.3e} {1:.3e} {2:.3e}'.format(dxs[-1], dys[-1], rolls[-1]),
                                       "N_STARS: {0:d}/{1:d}".format(xi_train[~rejected].size, (xi_train.size)),
                                       "RMS: {0:.6f} {1:.6f}".format(rmsXi, rmsEta), "W_SUM: {0:0.6f}".format(weightSum))
@@ -1279,7 +1287,7 @@ class SIPEstimator:
                 elapsedTime0 = time.time() - startTime0
                 print("P_ORDER = {0:d}, N_FOLDS = {1:d}, DONE! Elapsed time: {2:s}".format(pOrder, nFolds,
                                                                                            convertTime(elapsedTime0)))
-                return outTableFilename
+            return outTableFilename
 
     def _setDetectorParameters(self):
         if (self.detectorName == 'WFC'):
