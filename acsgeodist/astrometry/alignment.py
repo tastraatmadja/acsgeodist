@@ -605,7 +605,10 @@ class WCSAlignment:
                         pp1.savefig(fig2, bbox_inches='tight', dpi=300)
                         plt.close(fig=fig2)
 
+                        del fig2
+
                     pp1.close()
+                    del phaseCorrelationFigures
 
                     print("Phase correlation plot saved to {0:s}".format(plotFilename2))
 
