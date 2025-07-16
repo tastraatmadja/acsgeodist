@@ -360,9 +360,13 @@ class SIPEstimator:
                                 ## distribution
                                 mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
 
-                                ## Calculate the Mahalanobis Distance, i.e. standardized distance
-                                ## from the center of the gaussian distribution
-                                z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+                                try:
+                                    ## Calculate the Mahalanobis Distance, i.e. standardized distance
+                                    ## from the center of the gaussian distribution
+                                    z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+                                except np.linalg.LinAlgError:
+                                    print("{0:s} HAS A SINGULAR MATRIX: BREAKING OFF ITERATION...".format(rootname))
+                                    break
 
                                 ## We now use the z statistics to re-calculate the weights
                                 weights = stat.wdecay(z)
@@ -1196,7 +1200,11 @@ class SIPEstimator:
 
                                 ## Calculate the Mahalanobis Distance, i.e. standardized distance
                                 ## from the center of the gaussian distribution
-                                z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+                                try:
+                                    z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+                                except np.linalg.LinAlgError:
+                                    print("{0:s} HAS A SINGULAR MATRIX: BREAKING OFF ITERATION...".format(rootname))
+                                    break
 
                                 ## We now use the z statistics to re-calculate the weights
                                 weights = stat.wdecay(z)
