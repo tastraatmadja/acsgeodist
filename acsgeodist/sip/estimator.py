@@ -1115,7 +1115,12 @@ class SIPEstimator:
                         del dcorr
                         del fcorr
 
-                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
+                    X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY,
+                                                    bothAxes=True)
+
+                    coeffScaler = np.zeros(X.shape[1])
+                    coeffScaler[0::NAXIS] = self.scalerX
+                    coeffScaler[1::NAXIS] = self.scalerY
 
                     alpha0Im = float(hdu.header['CRVAL1'])
                     delta0Im = float(hdu.header['CRVAL2'])
@@ -1124,34 +1129,45 @@ class SIPEstimator:
 
                     chipCVResiduals = []
 
-                    for trainIdx, (train, test) in enumerate(kf.split(X)):
-                        print("P_ORDER:", pOrder, "FOLD:", trainIdx, train.size, test.size)
+                    for trainIdx, (train_1axis, test_1axis) in enumerate(kf.split(XC)):
+                        train = sip.getBothAxesIndices(train_1axis)
+                        test  = sip.getBothAxesIndices(test_1axis)
+                        print("P_ORDER:", pOrder, "FOLD {0:d}/{1:d}:".format(trainIdx+1, nFolds), train.size, test.size)
                         ## print(train)
                         ## print(test)
 
                         sx, sy, roll = xi0[0], eta0[0], np.deg2rad(orientat)
 
-                        X_train = deepcopy(X[train])
+                        X_train  = deepcopy(X[train])
+                        y_train  = np.zeros(X_train.shape[0])
+                        y_scaler = np.zeros_like(y_train)
 
-                        ## Initialize the reference coordinates
-                        xi_train  = deepcopy(xi[train])
-                        eta_train = deepcopy(eta[train])
+                        xi_train  = deepcopy(xi[train_1axis])
+                        eta_train = deepcopy(eta[train_1axis])
+
+                        y_train[0::NAXIS] = xi_train
+                        y_train[1::NAXIS] = eta_train
+
+                        y_scaler[0::NAXIS] = 1.0 / self.scalerX
+                        y_scaler[1::NAXIS] = 1.0 / self.scalerY
 
                         ## Initialize the weights using the match residuals
-                        residuals = np.array([delX[selection][train], delY[selection][train]]).T
+                        residuals = np.array([delX[selection][train_1axis], delY[selection][train_1axis]]).T
 
                         ## Use the weights to estimate the mean and covariance matrix of the residual distribution
                         mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, np.ones(residuals.shape[0]))
 
-                        weights = stat.wdecay(stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
+                        weights = np.repeat(stat.wdecay(stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))), NAXIS)
 
-                        previousWeightSum = np.sum(weights)
+                        previousWeightSum = np.sum(weights) / float(NAXIS)
 
                         ## IF we want to have individual zero points for each chip we initialize the container for shifts
                         ## and rolls here
                         dxs, dys, rolls = [], [], []
 
                         ## print(X_train.shape, xi_train.shape, eta_train.shape, weights.shape)
+
+                        coeffs = np.zeros(X_train.shape[1])
 
                         nIterTotal = 0
                         for iteration in range(N_ITER_OUTER):
@@ -1161,6 +1177,9 @@ class SIPEstimator:
 
                             xi_train, eta_train = coords.shift_rotate_coords(xi_train, eta_train, sx, sy, roll)
 
+                            y_train[0::2] = xi_train
+                            y_train[1::2] = eta_train
+
                             for iteration2 in range(N_ITER_INNER):
                                 nIterTotal += 1
 
@@ -1169,34 +1188,21 @@ class SIPEstimator:
                                 ## Initialize the linear regression
                                 reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
 
-                                reg.fit(X_train, xi_train / self.scalerX, sample_weight=weights)
+                                reg.fit(X_train, y_scaler * y_train, sample_weight=weights)
 
-                                coeffsA = reg.coef_ * self.scalerX / scalerArray
+                                coeffs = reg.coef_ * coeffScaler / scalerArray
 
-                                reg.fit(X_train, eta_train / self.scalerY, sample_weight=weights)
-
-                                coeffsB = reg.coef_ * self.scalerY / scalerArray
-
-                                coeffs = np.zeros((coeffsA.size + coeffsB.size))
-
-                                coeffs[0::2] = coeffsA
-                                coeffs[1::2] = coeffsB
-
-                                xiPred  = np.matmul(X_train * scalerArray, coeffs[0::2])
-                                etaPred = np.matmul(X_train * scalerArray, coeffs[1::2])
+                                y_pred = (X_train * scalerArray) @ coeffs
 
                                 ## Residuals already in pixel and in image axis
-                                residualsXi  = xi_train - xiPred
-                                residualsEta = eta_train - etaPred
+                                residuals = (y_train - y_pred).reshape((-1, NAXIS))
 
-                                rmsXi = np.sqrt(np.average(residualsXi ** 2, weights=weights))
-                                rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
-
-                                residuals = np.vstack([residualsXi, residualsEta]).T
+                                ## rmsXi = np.sqrt(np.average(residualsXi ** 2, weights=weights))
+                                ## rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
 
                                 ## Use the weights to estimate the mean and covariance matrix of the residual
                                 ## distribution
-                                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
+                                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights[0::NAXIS])
 
                                 ## Calculate the Mahalanobis Distance, i.e. standardized distance
                                 ## from the center of the gaussian distribution
@@ -1207,7 +1213,7 @@ class SIPEstimator:
                                     break
 
                                 ## We now use the z statistics to re-calculate the weights
-                                weights = stat.wdecay(z)
+                                weights = np.repeat(stat.wdecay(z), NAXIS)
 
                                 ## What we now call 'retained' are those stars with full weight
                                 retained0 = weights >= 1.0
@@ -1218,7 +1224,7 @@ class SIPEstimator:
                                 ## Finally those stars with zero weights
                                 rejected = weights <= 0
 
-                                weightSum = np.sum(weights)
+                                weightSum = np.sum(weights) / float(NAXIS)
 
                                 weightSumDiff = np.abs(weightSum - previousWeightSum) / weightSum
 
@@ -1251,21 +1257,23 @@ class SIPEstimator:
 
                                     weights = weights[~rejected]
 
-                                    xi_train  = xi_train[~rejected]
-                                    eta_train = eta_train[~rejected]
+                                    y_train  = y_train[~rejected]
+                                    y_scaler = y_scaler[~rejected]
+
+                                    xi_train  = y_train[0::NAXIS]
+                                    eta_train = y_train[1::NAXIS]
 
                         ## Once we have the coefficients, we calculate the residuals on the test set
-                        xiPred_test  = np.matmul(X[test] * scalerArray, coeffs[0::2])
-                        etaPred_test = np.matmul(X[test] * scalerArray, coeffs[1::2])
+                        yPred_test = (X[test] * scalerArray) @ coeffs
 
-                        xi_test  = deepcopy(xi[test])
-                        eta_test = deepcopy(eta[test])
+                        xi_test  = deepcopy(xi[test_1axis])
+                        eta_test = deepcopy(eta[test_1axis])
                         for sx, sy, roll in zip(dxs, dys, rolls):
                             xi_test, eta_test = coords.shift_rotate_coords(xi_test, eta_test, sx, sy, roll)
 
                         ## Residuals already in pixel and in image axis
-                        residualsXi_test  = xi_test  - xiPred_test
-                        residualsEta_test = eta_test - etaPred_test
+                        residualsXi_test  = xi_test  - yPred_test[0::NAXIS]
+                        residualsEta_test = eta_test - yPred_test[1::NAXIS]
 
                         residuals_test = np.vstack([residualsXi_test, residualsEta_test]).T
 
@@ -1280,7 +1288,7 @@ class SIPEstimator:
 
                         chipCVResiduals.append(np.hstack([residuals_test, weights_test, foldIndex]))
 
-                    chipNumber = np.full((X.shape[0], 1), chip)
+                    chipNumber = np.full((XC.size, 1), chip)
 
                     chipCVResiduals = np.hstack([chipNumber, np.vstack(chipCVResiduals)])
 
@@ -1290,11 +1298,22 @@ class SIPEstimator:
 
                 df = pd.DataFrame(CVResiduals, columns=['k', 'dx', 'dy', 'weights', 'foldIndex']).astype({'k': 'int', 'foldIndex': 'int'})
 
+                axisNames = ['dx', 'dy']
+                CVRMS     = np.zeros(NAXIS)
+                RSE       = np.zeros(NAXIS)
+                for axis, axisName in enumerate(axisNames):
+                    CVRMS[axis] = np.sqrt(stat.getWeightedAverage(df[axisName].values ** 2, df['weights'].values))
+                    RSE[axis]   = stat.getRSE(df[axisName].values)
+
                 df.to_csv(outTableFilename, index=False)
 
                 elapsedTime0 = time.time() - startTime0
-                print("P_ORDER = {0:d}, N_FOLDS = {1:d}, DONE! Elapsed time: {2:s}".format(pOrder, nFolds,
-                                                                                           convertTime(elapsedTime0)))
+                print("P_ORDER = {0:d}, N_FOLDS = {1:d}, DONE! CV-RMS = {2}, CV-RSE = {3}. Elapsed time: {4:s}".format(pOrder,
+                                                                                                         nFolds,
+                                                                                                         CVRMS,
+                                                                                                         RSE,
+                                                                                                         convertTime(elapsedTime0)))
+
             return outTableFilename
 
     def _setDetectorParameters(self):

@@ -118,3 +118,10 @@ def addLnProb(lnP1, lnP2):
 def getWeightedAverage(x, weights):
     selection = np.isfinite(x) & np.isfinite(weights)
     return np.average(x[selection], weights=weights[selection])
+
+'''
+RSE stands for Robust Scatter Estimate (Lindegren et al. 2012). RSE is the interdecile range (9th decile minus the first decile)
+multiplied by 0.390152 to scale it to the standard deviation.
+'''
+def getRSE(x):
+    return 0.390152 * (np.nanpercentile(x, 90.0) - np.nanpercentile(x, 10.0))

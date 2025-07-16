@@ -28,7 +28,7 @@ be as the following:
 def getUpperTriangularIndex(i, j):
     return int(getUpperTriangularMatrixNumberOfElements((i+j)) + i)
 
-def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0):
+def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0, bothAxes=False):
     n = pOrder + 1
 
     vanderX = np.vander(X / scalerX, n, increasing=True)
@@ -39,8 +39,12 @@ def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0):
 
     P = getUpperTriangularMatrixNumberOfElements(n)  ## Number of parameters PER AXIS!
 
-    XModel = np.zeros((X.shape[0], P))
-    scaler = np.zeros((1, P))
+    naxis = 1
+    if bothAxes:
+        naxis = 2
+
+    XModel = np.zeros((naxis * X.shape[0], naxis * P))
+    scaler = np.zeros((1, naxis * P))
 
     for ii in range(n):
         for jj in range(n - ii):
@@ -48,8 +52,9 @@ def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0):
             sVal = vanderScalerX[:, ii] * vanderScalerY[:, jj]
             ppp  = getUpperTriangularIndex(jj, ii)
 
-            XModel[:, ppp] = pVal
-            scaler[:, ppp] = sVal
+            for axis in range(naxis):
+                XModel[axis::naxis, ppp * naxis + axis] = pVal
+                scaler[:, ppp * naxis + axis]           = sVal
 
     return XModel, scaler.flatten()
 
@@ -82,3 +87,11 @@ def getCoefficients(df, pOrder):
                 results[axis, ppp] = df.iloc[0][coeffName]
 
     return results
+
+def getBothAxesIndices(indices_in, naxis=2):
+    indices_out = np.zeros(indices_in.size * naxis, dtype=int)
+
+    for axis in range(naxis):
+        indices_out[axis::naxis] = naxis * indices_in + axis
+
+    return indices_out
