@@ -36,9 +36,6 @@ WIDTH   = HEIGHT
 N_PARS_LINE  = 2
 N_PARS_CONST = 1
 
-CHIPS   = acsconstants.CHIP_NUMBER
-HEADERS = acsconstants.HEADER_NUMBER # hdu[SCI, x]
-
 N_ITER_OUTER = 10
 N_ITER_INNER = 100
 N_ITER_CD    = 5
@@ -175,8 +172,7 @@ class SIPEstimator:
                 delX = hst1pass['xPred'] - hst1pass['xRef']
                 delY = hst1pass['yPred'] - hst1pass['yRef']
 
-                matchRes = np.sqrt(
-                    (hst1pass['xPred'] - hst1pass['xRef']) ** 2 + (hst1pass['yPred'] - hst1pass['yRef']) ** 2)
+                matchRes = np.sqrt(delX ** 2 + delY ** 2)
 
                 ## Change the columns with default values
                 hst1pass['xPred']    = np.nan
@@ -1500,7 +1496,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.detectorName = detectorName
         self._setDetectorParameters()
 
-        print(self.detectorName)
+        print("DETECTOR:", self.detectorName)
 
         self.nOkay    = 0
         self.nDataAll = np.zeros(2, dtype=int)
@@ -1548,7 +1544,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         okays = []
 
-        for chip in CHIPS:
+        for chip in self.chip_numbers:
             indivDataFilename = '{0:s}/individualCoefficients_chip{1:d}_tMin{2:0.4f}_tMax{3:0.4f}_FINAL.csv'.format(
                 outDir, chip, self.tMin, self.tMax)
 
@@ -1637,7 +1633,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             gc.set_threshold(2, 1, 1)
 
-            for jjj, chip in enumerate(CHIPS):
+            for jjj, chip in enumerate(self.chip_numbers):
                 self.xiAll[jjj]  = np.hstack(self.xiAll[jjj])
                 self.etaAll[jjj] = np.hstack(self.etaAll[jjj])
 
@@ -1812,7 +1808,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             startTime = time.time()
 
-            for jjj, (chip, chipTitle) in enumerate(zip(CHIPS, acsconstants.WFC_LABELS)):
+            for jjj, (chip, chipTitle) in enumerate(zip(self.chip_numbers, self.chip_labels)):
                 indivDataFilename   = indivDataFilenames[jjj]
                 modelCoeffsFilename = modelCoeffsFilenames[jjj]
                 outTableFilename    = outTableFilenames[jjj]
@@ -1854,16 +1850,17 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals[selection], np.ones(nSelection))
 
-                    weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection], mean, np.linalg.inv(cov)))
+                    weights[selection] = stat.wdecay(stat.getMahalanobisDistances(residuals[selection], mean,
+                                                                                  np.linalg.inv(cov)))
 
                 previousWeightSum = np.sum(weights)
 
                 nIterTotal = 0
 
-                plotFilename1 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualDistribution.pdf".format(
+                plotFilename1 = "{0:s}/plot_time_dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualDistribution.pdf".format(
                     outDir, chip, self.pOrder, self.kOrder, self.nKnots)
 
-                plotFilename2 = "{0:s}/plot_time-dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualsXY.pdf".format(
+                plotFilename2 = "{0:s}/plot_time_dependent_model_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_residualsXY.pdf".format(
                     outDir, chip, self.pOrder, self.kOrder, self.nKnots)
 
                 if makePlots:
@@ -1891,16 +1888,16 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         A_A = X_A.T @ W @ X_A
                         A_B = X_B.T @ W @ X_B
 
-                        b_xi  = (X_A.T @ W @ (xiRef / scalerX)).reshape((-1, 1))
-                        b_eta = (X_B.T @ W @ (etaRef / scalerY)).reshape((-1, 1))
+                        b_xi  = (X_A.T @ W @ (xiRef / self.scalerX)).reshape((-1, 1))
+                        b_eta = (X_B.T @ W @ (etaRef / self.scalerY)).reshape((-1, 1))
 
                         coeffsA, res, rnk, s = linalg.lstsq(A_A.todense(), b_xi, overwrite_a=True, overwrite_b=True)
 
-                        coeffsA = coeffsA.flatten() * scalerX / scalerArrayAll_A
+                        coeffsA = coeffsA.flatten() * self.scalerX / scalerArrayAll_A
 
                         coeffsB, res, rnk, s = linalg.lstsq(A_B.todense(), b_eta, overwrite_a=True, overwrite_b=True)
 
-                        coeffsB = coeffsB.flatten() * scalerY / scalerArrayAll_B
+                        coeffsB = coeffsB.flatten() * self.scalerY / scalerArrayAll_B
 
                         if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)) and saveIntermediateResults:
                             coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
@@ -2011,10 +2008,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
                                 yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
 
-                                XY0 = np.array([X0, Y0[0]])
+                                XY0 = np.array([self.X0, self.Y0[0]])
 
                                 xMin = np.array([0, 0])
-                                xMax = np.array([4096, 2048])
+                                xMax = np.array([2.0 * self.scalerX, 2.0 * self.scalerY])
 
                                 yMin = +np.inf
                                 yMax = -np.inf
@@ -2063,8 +2060,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                         axes2[axis1, axis2].set_xlabel(xLabels[axis2])
                                         axes2[axis1, axis2].set_ylabel(yLabels[axis1])
 
-                                        axes2[axis1, axis2].xaxis.set_major_locator(ticker.MultipleLocator(dX))
-                                        axes2[axis1, axis2].xaxis.set_minor_locator(ticker.MultipleLocator(dMX))
+                                        ## axes2[axis1, axis2].xaxis.set_major_locator(ticker.MultipleLocator(dX))
+                                        ## axes2[axis1, axis2].xaxis.set_minor_locator(ticker.MultipleLocator(dMX))
+                                        axes2[axis1, axis2].xaxis.set_major_locator(ticker.AutoLocator())
+                                        axes2[axis1, axis2].xaxis.set_minor_locator(ticker.AutoMinorLocator())
 
                                         axes2[axis1, axis2].yaxis.set_major_locator(ticker.AutoLocator())
                                         axes2[axis1, axis2].yaxis.set_minor_locator(ticker.AutoMinorLocator())
@@ -2180,8 +2179,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         if (not os.path.exists(fitResultsFilename)):
             ## Read the output table from the time-dependent coefficient fitting
-            resids = table.vstack([ascii.read(outTableFilenames[0]),
-                                   ascii.read(outTableFilenames[1])])
+            resids = table.vstack([ascii.read(outTableFilename) for outTableFilename in outTableFilenames])
 
             ## Read individual SIP coefficients and spline coefficients
             df_indiv_data = pd.concat([pd.read_csv(indivDataFilename) for indivDataFilename in indivDataFilenames],
@@ -2223,7 +2221,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         self.refCat['xt'] = self.refCat['x'].values + self.refCat['pm_x'].values * dt
                         self.refCat['yt'] = self.refCat['y'].values + self.refCat['pm_y'].values * dt
 
-                        hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+                        hst1pass = table.hstack([ascii.read(hst1passFile, format='csv'),
+                                                 ascii.read(addendumFilename, format='csv')])
 
                         ## Add new columns and assign default values
                         hst1pass['dx']       = np.nan
@@ -2278,19 +2277,21 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                     stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
 
                         textResults = ""
-                        for jjj, (chip, ver, chipTitle) in enumerate(zip(CHIPS, HEADERS, acsconstants.WFC_LABELS)):
+                        for jjj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
+                                                                         self.header_numbers,
+                                                                         self.chip_labels)):
                             startTime = time.time()
 
                             hdu = hduList['SCI', ver]
 
+                            naxis1 = int(hdu.header['NAXIS1'])
+                            naxis2 = int(hdu.header['NAXIS2'])
+
                             ## Zero point of the y coordinates.
-                            if (chip == 2):
-                                yzp    = 0.0
-                                naxis2 = int(hdu.header['NAXIS2'])
+                            if (ver == 1):
+                                yzp = 0.0
                             else:
                                 yzp += float(naxis2)
-
-                                naxis2 = int(hdu.header['NAXIS2'])
 
                             orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
                             vaFactor = float(hdu.header['VAFACTOR'])
@@ -2302,27 +2303,31 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             refStarIdx = hst1pass[selection]['refCatIndex'].value
 
-                            xiRef  = self.refCat[refStarIdx]['xt'] / vaFactor
-                            etaRef = self.refCat[refStarIdx]['yt'] / vaFactor
+                            xiRef  = self.refCat.iloc[refStarIdx]['xt'].values / vaFactor
+                            etaRef = self.refCat.iloc[refStarIdx]['yt'].values / vaFactor
 
                             nStars = xiRef.size
 
-                            XC = hst1pass['X'][selection] - X0
-                            YC = hst1pass['Y'][selection] - Y0[jjj]
+                            XC = hst1pass['X'][selection] - self.X0
+                            YC = hst1pass['Y'][selection] - self.Y0[jjj]
 
                             if self.make_lithographic_and_filter_mask_corrections:
-                                dcorr = np.array(
-                                    litho.interp_dtab_ftab_data(self.dtabs[jjj], hst1pass['X'][selection].value,
-                                                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
-                                fcorr = np.array(
-                                    litho.interp_dtab_ftab_data(self.ftabs[jjj], hst1pass['X'][selection].value,
-                                                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                                dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj],
+                                                                             hst1pass['X'][selection].value,
+                                                                             hst1pass['Y'][selection].value - yzp,
+                                                                             self.XRef * 2, self.YRef * 2)).T
+
+                                fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jjj],
+                                                                             hst1pass['X'][selection].value,
+                                                                             hst1pass['Y'][selection].value - yzp,
+                                                                             self.XRef * 2, self.YRef * 2)).T
 
                                 ## Apply the lithographic mask correction
                                 XC -= (dcorr[:, 2] - fcorr[:, 2])
                                 YC -= (dcorr[:, 3] - fcorr[:, 3])
 
-                            X, scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
+                            X, scalerArray = sip.buildModel(XC, YC, self.pOrder,
+                                                            scalerX=self.scalerX, scalerY=self.scalerY)
 
                             thisCoeffsA = np.zeros((self.nParsSIP, 1), dtype=float)
                             thisCoeffsB = np.zeros_like(thisCoeffsA)
@@ -2360,8 +2365,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             selection  = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & hst1pass['retained']
                             refStarIdx = hst1pass['refCatIndex'][selection].value
 
-                            hst1pass['xiRef'][selection]  = self.refCat[refStarIdx]['xt'] / vaFactor
-                            hst1pass['etaRef'][selection] = self.refCat[refStarIdx]['yt'] / vaFactor
+                            hst1pass['xiRef'][selection]  = self.refCat.iloc[refStarIdx]['xt'].values / vaFactor
+                            hst1pass['etaRef'][selection] = self.refCat.iloc[refStarIdx]['yt'].values / vaFactor
 
                             CDMatrix = np.full((2, 3), np.nan)
 
@@ -2736,23 +2741,24 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     and (posTargResultant <= self.max_pos_targs)):
                 pa_v3 = float(hduList[0].header['PA_V3'])
 
-                dt = t_acs.decimalyear - self.tRef0.utc.value
+                dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
 
                 ## We use the observation time, in combination with the proper motions to move
                 ## the coordinates into the time
-                self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
-                self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+                self.refCat['xt'] = self.refCat['x'].values + self.refCat['pm_x'].values * dt
+                self.refCat['yt'] = self.refCat['y'].values + self.refCat['pm_y'].values * dt
 
-                hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
+                hst1pass = table.hstack([ascii.read(hst1passFile, format='csv'),
+                                         ascii.read(addendumFilename, format='csv')])
 
                 delX = hst1pass['xPred'] - hst1pass['xRef']
                 delY = hst1pass['yPred'] - hst1pass['yRef']
 
                 matchRes = np.sqrt(delX ** 2 + delY ** 2)
 
-                okays     = np.zeros(CHIPS.size, dtype='bool')
-                nGoodData = np.zeros(CHIPS.size, dtype=int)
-                for jjj, chip in enumerate(CHIPS):
+                okays     = np.zeros(self.chip_numbers.size, dtype='bool')
+                nGoodData = np.zeros(self.chip_numbers.size, dtype=int)
+                for jjj, chip in enumerate(self.chip_numbers):
                     selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
                             hst1pass['q'] <= Q_MAX) & (~np.isnan(hst1pass['nAppearances'])) & (
                                         hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
@@ -2773,8 +2779,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 okayToProceed = np.prod(okays, dtype='bool')
 
-                ## print("OKAY TO PROCEED:", okayToProceed)
-
                 Xt = bspline.getForwardModelBSpline(t_acs.decimalyear, self.kOrder, self.tKnot)
 
                 if okayToProceed:
@@ -2790,17 +2794,21 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     self.XtAll.append(Xt)
                     self.tObs.append(t_acs.decimalyear)
 
-                    for jjj, (chip, ver) in enumerate(zip(CHIPS, HEADERS)):
+                    for jjj, (chip, ver) in enumerate(zip(self.chip_numbers, self.header_numbers)):
                         hdu = hduList['SCI', ver]
 
-                        ## Zero point of the y coordinates.
+                        k = 1
+                        if (self.detectorName == 'WFC'):
+                            k = int(hdu.header['CCDCHIP'])
+
+                        naxis1 = int(hdu.header['NAXIS1'])
                         naxis2 = int(hdu.header['NAXIS2'])
-                        if (chip == 2):
+
+                        ## Zero point of the y coordinates.
+                        if (ver == 1):
                             yzp = 0.0
                         else:
                             yzp += float(naxis2)
-
-                            naxis2 = int(hdu.header['NAXIS2'])
 
                         orientat = Angle(float(hdu.header['ORIENTAT']) * u.deg).wrap_at('360d').value
                         vaFactor = float(hdu.header['VAFACTOR'])
@@ -2819,22 +2827,22 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         self.nDataAll[jjj] += nData
 
-                        xi = self.refCat[refStarIdx]['xt'] / vaFactor
-                        eta = self.refCat[refStarIdx]['yt'] / vaFactor
+                        xi  = self.refCat.iloc[refStarIdx]['xt'].values / vaFactor
+                        eta = self.refCat.iloc[refStarIdx]['yt'].values / vaFactor
 
-                        XC = hst1pass['X'][selection] - X0
-                        YC = hst1pass['Y'][selection] - Y0[jjj]
+                        XC = hst1pass['X'][selection] - self.X0
+                        YC = hst1pass['Y'][selection] - self.Y0[jjj]
 
-                        if self.make_lithographic_and_filter_mask_corrections:
-                            dcorr = np.array(litho.interp_dtab_ftab_data(
-                                self.dtabs[jjj],
-                                hst1pass['X'][selection].value,
-                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                        if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
+                            dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj],
+                                                                         hst1pass['X'][selection].value,
+                                                                         hst1pass['Y'][selection].value - yzp,
+                                                                         self.XRef * 2, self.YRef * 2)).T
 
-                            fcorr = np.array(litho.interp_dtab_ftab_data(
-                                self.ftabs[jjj],
-                                hst1pass['X'][selection].value,
-                                hst1pass['Y'][selection].value - yzp, XRef * 2, YRef * 2)).T
+                            fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jjj],
+                                                                         hst1pass['X'][selection].value,
+                                                                         hst1pass['Y'][selection].value - yzp,
+                                                                         self.XRef * 2, self.YRef * 2)).T
 
                             ## Apply the lithographic and filter mask correction
                             XC -= (dcorr[:, 2] - fcorr[:, 2])
@@ -2843,7 +2851,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             del dcorr
                             del fcorr
 
-                        Xp, self.scalerArray = sip.buildModel(XC, YC, self.pOrder, scalerX=scalerX, scalerY=scalerY)
+                        Xp, scalerArray = sip.buildModel(XC, YC, self.pOrder,
+                                                         scalerX=self.scalerX, scalerY=self.scalerY)
 
                         Xkp_A = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_A))
                         Xkp_B = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_B))
@@ -2878,8 +2887,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         self.rootnamesAll[jjj].append(np.full(nData, rootname, dtype=object))
 
-                        self.dxAll[jjj].append(xi[centerStar])
-                        self.dyAll[jjj].append(eta[centerStar])
+                        ## Initialize the shift in x and y using the central sky coordinates of the image
+                        alpha0Im = float(hdu.header['CRVAL1'])
+                        delta0Im = float(hdu.header['CRVAL2'])
+
+                        xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
+
+                        self.dxAll[jjj].append(xi0[0])
+                        self.dyAll[jjj].append(eta0[0])
                         self.rollAll[jjj].append(np.deg2rad(orientat))
 
                         self.matchResAll[jjj].append(np.array([delX[selection], delY[selection]]).T)
@@ -2912,6 +2927,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                              etaRef[selection],
                                                                              sx, sy, roll)
         return xiRef, etaRef
+
     def _getColumnNamesForIndividualCoefficients(self):
         columns_indiv = ['rootname', 'tObs', 'chip']
 

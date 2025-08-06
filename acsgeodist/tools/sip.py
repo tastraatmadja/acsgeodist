@@ -70,7 +70,7 @@ def getCoeffName(i, j):
         return name
 
 
-def getCoefficients(df, pOrder):
+def getCoefficients(df, pOrder, iloc=0):
     n = pOrder+ 1
     P = getUpperTriangularMatrixNumberOfElements(n)
 
@@ -84,7 +84,7 @@ def getCoefficients(df, pOrder):
 
             for axis in range(acsconstants.NAXIS):
                 coeffName = '{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], ppp + 1)
-                results[axis, ppp] = df.iloc[0][coeffName]
+                results[axis, ppp] = df.iloc[iloc][coeffName]
 
     return results
 
