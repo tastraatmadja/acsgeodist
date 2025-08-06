@@ -138,7 +138,7 @@ class SIPEstimator:
         posTarg1 = float(hduList[0].header['POSTARG1'])
         posTarg2 = float(hduList[0].header['POSTARG2'])
 
-        dt = t_acs.decimalyear - self.tRef0.utc.value
+        dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
 
         ## We use the observation time, in combination with the proper motions to move
         ## the coordinates into the time
@@ -1004,7 +1004,7 @@ class SIPEstimator:
         posTarg1 = float(hduList[0].header['POSTARG1'])
         posTarg2 = float(hduList[0].header['POSTARG2'])
 
-        dt = t_acs.decimalyear - self.tRef0.utc.value
+        dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
 
         ## We use the observation time, in combination with the proper motions to move
         ## the coordinates into the time
@@ -1493,9 +1493,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.max_pos_targs = max_pos_targs
 
     def estimateTimeDependentBSplineCoefficients(self, hst1passFiles, imageFilenames, outDir='.', makePlots=True,
-                                                 saveIntermediateResults=True, nCPUs=None, **kwargs):
+                                                 saveIntermediateResults=True, nCPUs=None, detectorName='WFC', **kwargs):
 
         startTimeAll = time.time()
+
+        self.detectorName = detectorName
+        self._setDetectorParameters()
+
+        print(self.detectorName)
 
         self.nOkay    = 0
         self.nDataAll = np.zeros(2, dtype=int)
@@ -2202,7 +2207,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         rootname = hduList[0].header['ROOTNAME']
 
-                        dt = t_acs.decimalyear - self.tRef0.utc.value
+                        dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
 
                         tExp = float(hduList[0].header['EXPTIME'])
 
@@ -2215,8 +2220,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         ## We use the observation time, in combination with the proper motions to move
                         ## the coordinates into the time
-                        self.refCat['xt'] = self.refCat['x'].value + self.refCat['pm_x'].value * dt
-                        self.refCat['yt'] = self.refCat['y'].value + self.refCat['pm_y'].value * dt
+                        self.refCat['xt'] = self.refCat['x'].values + self.refCat['pm_x'].values * dt
+                        self.refCat['yt'] = self.refCat['y'].values + self.refCat['pm_y'].values * dt
 
                         hst1pass = table.hstack([ascii.read(hst1passFile), ascii.read(addendumFilename)])
 
