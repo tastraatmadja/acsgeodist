@@ -1497,6 +1497,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self._setDetectorParameters()
 
         print("DETECTOR:", self.detectorName)
+        '''
+        print(self.n_chips, self.chip_numbers, self.header_numbers, self.chip_labels,
+              self.X0, self.Y0, self.XRef, self.YRef, self.scalerX, self.scalerY)
+        ''';
 
         self.nOkay    = 0
         self.nDataAll = np.zeros(2, dtype=int)
@@ -2851,8 +2855,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             del dcorr
                             del fcorr
 
-                        Xp, scalerArray = sip.buildModel(XC, YC, self.pOrder,
-                                                         scalerX=self.scalerX, scalerY=self.scalerY)
+                        Xp, self.scalerArray = sip.buildModel(XC, YC, self.pOrder,
+                                                              scalerX=self.scalerX,
+                                                              scalerY=self.scalerY)
+
 
                         Xkp_A = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_A))
                         Xkp_B = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_B))
