@@ -12,21 +12,32 @@ def getUpperTriangularMatrixNumberOfElements(n):
 Return the upper triangular index of a square matrix with any size 
 Example below for n = 5, the p index for any given i,j index will
 be as the following:
- * i\j|  0    1    2    3    4 |
+ * i\j|  0 |  1 |  2 |  3 |  4 |
  * ---|-------------------------
- *  0 |  0 |  2 |  5 |  9 | 14 |
- *    |-------------------------
- *  1 |  1 |  4 |  8 | 13 |
- *    |--------------------
- *  2 |  3 |  7 | 12 |
- *    |---------------
- *  3 |  6 | 11 |
- *    |----------
- *  4 | 10 |
+ *  0 |  0 |  1 |  3 |  6 | 10 |
+ * ---|-------------------------
+ *  1 |  2 |  4 |  7 | 11 |
+ * ---|--------------------
+ *  2 |  5 |  8 | 12 |
+ * ---|---------------
+ *  3 |  9 | 13 |
+ * ---|----------
+ *  4 | 14 |
  * ---------
 '''
 def getUpperTriangularIndex(i, j):
     return int(getUpperTriangularMatrixNumberOfElements((i+j)) + i)
+
+'''
+Given an upper triangular index p, return the Cantor pair of integers
+i and j
+Source: https://en.wikipedia.org/wiki/Pairing_function
+'''
+def getCantorPair(p):
+    w = np.floor((np.sqrt(8 * p + 1) - 1) / 2)
+    t = (w * w + w) / 2
+    i = int(p - t)
+    return i, int(w - i)
 
 def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0, bothAxes=False):
     n = pOrder + 1
@@ -58,6 +69,10 @@ def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0, bothAxes=False):
 
     return XModel, scaler.flatten()
 
+'''
+Return the coefficient 'name' in Vera's formatting, i.e. i = 2 and j = 1
+returns XXY, i = 3 and j = 2 returns XXXYY
+'''
 def getCoeffName(i, j):
     if (i == 0) and (j == 0):
         return 'CONSTANT'
