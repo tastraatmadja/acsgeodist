@@ -13,20 +13,20 @@ Return the upper triangular index of a square matrix with any size
 Example below for n = 5, the p index for any given i,j index will
 be as the following:
  * i\j|  0 |  1 |  2 |  3 |  4 |
- * ---|-------------------------
- *  0 |  0 |  1 |  3 |  6 | 10 |
- * ---|-------------------------
- *  1 |  2 |  4 |  7 | 11 |
- * ---|--------------------
- *  2 |  5 |  8 | 12 |
- * ---|---------------
- *  3 |  9 | 13 |
- * ---|----------
- *  4 | 14 |
+ * ---+----+----+----+----+----|
+ *  0 |  0 |  2 |  5 |  9 | 14 |
+ * ---+----+----+----+----+-----
+ *  1 |  1 |  4 |  8 | 13 |
+ * ---+----+----+----+-----
+ *  2 |  3 |  7 | 12 |
+ * ---+----+----+-----
+ *  3 |  6 | 11 |
+ * ---+----+-----
+ *  4 | 10 |
  * ---------
 '''
 def getUpperTriangularIndex(i, j):
-    return int(getUpperTriangularMatrixNumberOfElements((i+j)) + i)
+    return int(getUpperTriangularMatrixNumberOfElements(i+j) + j)
 
 '''
 Given an upper triangular index p, return the Cantor pair of integers
@@ -36,8 +36,8 @@ Source: https://en.wikipedia.org/wiki/Pairing_function
 def getCantorPair(p):
     w = np.floor((np.sqrt(8 * p + 1) - 1) / 2)
     t = (w * w + w) / 2
-    i = int(p - t)
-    return i, int(w - i)
+    j = int(p - t)
+    return int(w - j), j
 
 def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0, bothAxes=False):
     n = pOrder + 1
@@ -61,7 +61,7 @@ def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0, bothAxes=False):
         for jj in range(n - ii):
             pVal = vanderX[:, ii] * vanderY[:, jj]
             sVal = vanderScalerX[:, ii] * vanderScalerY[:, jj]
-            ppp  = getUpperTriangularIndex(jj, ii)
+            ppp  = getUpperTriangularIndex(ii, jj)
 
             for axis in range(naxis):
                 XModel[axis::naxis, ppp * naxis + axis] = pVal
@@ -93,7 +93,7 @@ def getCoefficients(df, pOrder, iloc=0):
 
     for ii in range(n):
         for jj in range(n - ii):
-            ppp = getUpperTriangularIndex(jj, ii)
+            ppp = getUpperTriangularIndex(ii, jj)
 
             ## sVal = vanderScalerX[:, ii] * vanderScalerY[:, jj]
 

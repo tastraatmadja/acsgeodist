@@ -1438,7 +1438,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         for ii in range(n):
             for jj in range(n - ii):
-                ppp = sip.getUpperTriangularIndex(jj, ii)
+                ppp = sip.getUpperTriangularIndex(ii, jj)
                 self.indivParsIndices_A.append(ppp)
                 self.indivParsIndices_B.append(ppp)
 
@@ -1457,7 +1457,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         n = self.pOrder + 1
         for ii in range(n):
             for jj in range(n - ii):
-                ppp = sip.getUpperTriangularIndex(jj, ii)
+                ppp = sip.getUpperTriangularIndex(ii, jj)
 
                 if ppp not in self.indivParsIndices_A:
                     self.splineParsIndices_A.append(ppp)
