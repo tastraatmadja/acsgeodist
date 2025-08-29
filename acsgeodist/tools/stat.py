@@ -1,7 +1,11 @@
 import numpy as np
 from scipy.spatial import distance
+from scipy.stats import norm
 
 LN_2PI = np.log(2 * np.pi)
+
+SCALER_RSE  = 1.0 / (norm.ppf(0.90) - norm.ppf(0.10))
+SCALER_RSTD = 1.0 / (norm.ppf(0.95) - norm.ppf(0.05))
 
 '''
 Weighting function wdecay
@@ -124,4 +128,13 @@ RSE stands for Robust Scatter Estimate (Lindegren et al. 2012). RSE is the inter
 multiplied by 0.390152 to scale it to the standard deviation.
 '''
 def getRSE(x):
-    return 0.390152 * (np.nanpercentile(x, 90.0) - np.nanpercentile(x, 10.0))
+    return SCALER_RSE * (np.nanpercentile(x, 90.0) - np.nanpercentile(x, 10.0))
+
+'''
+Robust Std. Deviation is from Astraatmadja & Bailer Jones 2016. It is the 90% credible interval (i.e. the range between 
+the 95th percentile and the 5th percentile) divided by 2s, where s = 1.645, to scale it to the standard deviation (s is
+the ratio of the 90% to 68.3% credible in a standard gaussian).
+'''
+def getRobustStdDev(x):
+    return SCALER_RSTD * (np.nanpercentile(x, 95.0) - np.nanpercentile(x, 5.0))
+
