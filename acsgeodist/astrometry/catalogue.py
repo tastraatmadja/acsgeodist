@@ -688,7 +688,7 @@ class SourceCollector:
 
                 print("FOUND {0:d} GAIA SOURCES!".format(len(g)))
 
-                gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+                gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['source_id']], dtype=str)
 
                 c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
                                   pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
@@ -729,7 +729,7 @@ class SourceCollector:
                                 hasGDR3_indices.append(index)
                             foundIndices.append(matchIndex)
                 else:
-                    gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+                    gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['source_id']], dtype=str)
 
                     xi0_pix  = (df_ppm['xi0'].values * u.pix * acsconstants.ACS_PLATESCALE).decompose()
                     eta0_pix = (df_ppm['eta0'].values * u.pix * acsconstants.ACS_PLATESCALE).decompose()

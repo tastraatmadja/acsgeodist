@@ -101,7 +101,7 @@ class SIPEstimator:
 
             g = g[gaia_selection]
 
-            self.gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['SOURCE_ID']], dtype=str)
+            self.gdr3_id = np.array(['GDR3_{0:d}'.format(sourceID) for sourceID in g['source_id']], dtype=str)
 
             self.c_gdr3 = SkyCoord(ra=g['ra'].value * u.deg, dec=g['dec'].value * u.deg,
                               pm_ra_cosdec=g['pmra'].value * u.mas / u.yr, pm_dec=g['pmdec'].value * u.mas / u.yr,
