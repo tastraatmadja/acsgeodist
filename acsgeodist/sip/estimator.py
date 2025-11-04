@@ -131,6 +131,9 @@ class SIPEstimator:
 
         rootname   = hduList[0].header['ROOTNAME']
         filterName = hduList[0].header['FILTER1']
+        if ('clear' in filterName.lower()):
+            filterName = hduList[0].header['FILTER2']
+
         tExp = float(hduList[0].header['EXPTIME'])
         tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
         t_acs = Time(tstring, scale='ut1', format='fits')
