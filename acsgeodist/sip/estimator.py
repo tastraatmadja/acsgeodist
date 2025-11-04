@@ -111,9 +111,14 @@ class SIPEstimator:
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
 
     def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, addendumFilename=None, detectorName='WFC',
-                            outDir='.', **kwargs):
+                            outDir='.', individualZP=None, **kwargs):
         if (addendumFilename is None):
             addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
+        if (individualZP is not None):
+            self.individualZP = individualZP
+
+        if (not self.individualZP):
+            print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
 
         self.detectorName = detectorName
         self._setDetectorParameters()

@@ -4,8 +4,12 @@ from scipy.stats import norm
 
 LN_2PI = np.log(2 * np.pi)
 
+ONE_SIGMA_LO = norm.cdf(-1) * 100.0
+ONE_SIGMA_HI = norm.cdf(1) * 100.0
+
 SCALER_RSE  = 1.0 / (norm.ppf(0.90) - norm.ppf(0.10))
 SCALER_RSTD = 1.0 / (norm.ppf(0.95) - norm.ppf(0.05))
+SCALER_1SIG = 1.0 / (norm.ppf(norm.cdf(1)) - norm.ppf(norm.cdf(-1)))
 
 '''
 Weighting function wdecay
@@ -122,6 +126,9 @@ def addLnProb(lnP1, lnP2):
 def getWeightedAverage(x, weights):
     selection = np.isfinite(x) & np.isfinite(weights)
     return np.average(x[selection], weights=weights[selection])
+
+def get1SigmaRange(x):
+    return SCALER_1SIG * (np.nanpercentile(x, ONE_SIGMA_HI) - np.percentile(x, ONE_SIGMA_LO))
 
 '''
 RSE stands for Robust Scatter Estimate (Lindegren et al. 2012). RSE is the interdecile range (9th decile minus the first decile)
