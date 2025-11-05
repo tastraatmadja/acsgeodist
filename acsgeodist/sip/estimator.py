@@ -725,6 +725,7 @@ class SIPEstimator:
                     hst1pass['resEta'][selection] = (
                             hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
 
+                    ## Calculate the residuals in the sky plane
                     rmsXi  = np.nan
                     rmsEta = np.nan
 
@@ -735,13 +736,29 @@ class SIPEstimator:
                     if (np.sum(hst1pass['weights'][selection].value) > 0) and (
                             residual_selection[residual_selection].size > 0):
                         rmsXi  = np.sqrt(stat.getWeightedAverage(hst1pass['resXi'][selection].value ** 2,
-                                                                hst1pass['weights'][selection].value))
+                                                                 hst1pass['weights'][selection].value))
                         rmsEta = np.sqrt(stat.getWeightedAverage(hst1pass['resEta'][selection].value ** 2,
                                                                  hst1pass['weights'][selection].value))
+
+                    ## Do the same for residuals in the v2-v3 plane
+                    rmsX = np.nan
+                    rmsY = np.nan
+
+                    residual_selection = (np.isfinite(hst1pass['dx'][selection].value) &
+                                          np.isfinite(hst1pass['dy'][selection].value) &
+                                          np.isfinite(hst1pass['weights'][selection].value))
+
+                    if (np.sum(hst1pass['weights'][selection].value) > 0) and (
+                            residual_selection[residual_selection].size > 0):
+                        rmsX = np.sqrt(stat.getWeightedAverage(hst1pass['dx'][selection].value ** 2,
+                                                               hst1pass['weights'][selection].value))
+                        rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dy'][selection].value ** 2,
+                                                               hst1pass['weights'][selection].value))
 
                     textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
                         rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
                     textResults += " {0:d} {1:d}".format(nIterTotal, nStars)
+                    textResults += " {0:0.6f} {1:0.6f}".format(rmsX, rmsY)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                     textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
                     textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
