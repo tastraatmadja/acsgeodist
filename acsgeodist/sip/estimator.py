@@ -1467,8 +1467,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 self.indivParsIndices_A.append(ppp)
                 self.indivParsIndices_B.append(ppp)
 
+        '''
         if (self.pOrderIndiv < 1):
             self.indivParsIndices_A.append(2)
+        ''';
 
         self.indivParsIndices_A = np.array(sorted(self.indivParsIndices_A))
         self.indivParsIndices_B = np.array(sorted(self.indivParsIndices_B))
@@ -2141,12 +2143,22 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             dys.append(coeffsB[0:end_B:self.nParsIndiv_B])
 
                             if (self.pOrderIndiv == 0):
-                                coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
+                                start = self.nImages * self.nParsIndiv_A + self.nParsK
+                                end   = start + self.nParsK
+
+                                coeffsA3 = self.XtAll @ coeffsA[start:end]
+
+                                print(self.XtAll.shape)
+                                print(coeffsA3)
+
+                                ## coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
 
                                 start = self.nImages * self.nParsIndiv_B + self.nParsK
                                 end   = start + self.nParsK
 
                                 coeffsB3 = self.XtAll @ coeffsB[start:end]
+
+                                print(coeffsB3)
                             else:
                                 thisP = 2
 
@@ -2154,6 +2166,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 coeffsB3 = coeffsB[thisP:end_B:self.nParsIndiv_B]
 
                             rolls.append(-np.arctan(coeffsA3 / coeffsB3))
+
+                            rolls[iteration]
 
                             break
                         else:
