@@ -1440,8 +1440,9 @@ class SIPEstimator:
 
 class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
-                 qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0, max_pos_targs=0.0,
-                 individualZP=True, make_lithographic_and_filter_mask_corrections=True, cross_match=True):
+                 detectorName='WFC', qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0,
+                 max_pos_targs=0.0, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
+                 cross_match=True):
         super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
                        min_n_refstar=min_n_refstar,
                        make_lithographic_and_filter_mask_corrections=make_lithographic_and_filter_mask_corrections,
@@ -1453,6 +1454,23 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.tMin        = tMin
         self.tMax        = tMax
 
+        self.detectorName = detectorName
+        self._setDetectorParameters()
+
+        print(self.n_chips)
+        print(self.chip_numbers)
+        print(self.header_numbers)
+        print(self.chip_labels)
+
+        print(self.X0)
+        print(self.Y0)
+
+        print(self.XRef)
+        print(self.YRef)
+
+        print(self.scalerX)
+        print(self.scalerY)
+
         ## These are numbers of parameters PER AXIS! Note the suffix A and B to indicate the axes
         n = self.pOrderIndiv + 1
 
@@ -1461,19 +1479,20 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.indivParsIndices_A = []
         self.indivParsIndices_B = []
 
-        for ii in range(n):
-            for jj in range(n - ii):
-                ppp = sip.getUpperTriangularIndex(ii, jj)
-                self.indivParsIndices_A.append(ppp)
-                self.indivParsIndices_B.append(ppp)
+        for chipNumber in self.chip_numbers:
+            thisIndivParsIndices_A = []
+            thisIndivParsIndices_B = []
+            for ii in range(n):
+                for jj in range(n - ii):
+                    ppp = sip.getUpperTriangularIndex(ii, jj)
+                    thisIndivParsIndices_A.append(ppp)
+                    thisIndivParsIndices_B.append(ppp)
 
-        '''
-        if (self.pOrderIndiv < 1):
-            self.indivParsIndices_A.append(2)
-        ''';
+            if (self.pOrderIndiv < 1) and (not ((self.detectorName == 'WFC') and (chipNumber == 1))):
+                thisIndivParsIndices_A.append(2)
 
-        self.indivParsIndices_A = np.array(sorted(self.indivParsIndices_A))
-        self.indivParsIndices_B = np.array(sorted(self.indivParsIndices_B))
+            thisIndivParsIndices_A = np.array(sorted(thisIndivParsIndices_A))
+            thisIndivParsIndices_B = np.array(sorted(thisIndivParsIndices_B))
 
         self.nParsIndiv_A = self.indivParsIndices_A.size
         self.nParsIndiv_B = self.indivParsIndices_B.size
@@ -2143,12 +2162,16 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             dys.append(coeffsB[0:end_B:self.nParsIndiv_B])
 
                             if (self.pOrderIndiv == 0):
+                                '''
                                 start = self.nImages * self.nParsIndiv_A + self.nParsK
                                 end   = start + self.nParsK
 
                                 coeffsA3 = self.XtAll @ coeffsA[start:end]
+                                ''';
+                                coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
 
                                 print(self.XtAll.shape)
+                                print("A3:")
                                 print(coeffsA3)
 
                                 ## coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
@@ -2158,6 +2181,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                                 coeffsB3 = self.XtAll @ coeffsB[start:end]
 
+                                print("B3:")
                                 print(coeffsB3)
                             else:
                                 thisP = 2
@@ -2167,7 +2191,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             rolls.append(-np.arctan(coeffsA3 / coeffsB3))
 
-                            rolls[iteration]
+                            print("ROLL_ANGLES:")
+                            print(rolls[iteration])
 
                             break
                         else:
