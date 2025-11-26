@@ -1479,6 +1479,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         self.indivParsIndices_A = []
         self.indivParsIndices_B = []
 
+        self.nParsIndiv_A = []
+        self.nParsIndiv_B = []
+
         for chipNumber in self.chip_numbers:
             thisIndivParsIndices_A = []
             thisIndivParsIndices_B = []
@@ -1488,33 +1491,56 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     thisIndivParsIndices_A.append(ppp)
                     thisIndivParsIndices_B.append(ppp)
 
-            if (self.pOrderIndiv < 1) and (not ((self.detectorName == 'WFC') and (chipNumber == 1))):
+            if (self.pOrderIndiv < 1) and (not ((not self.individualZP) and (self.detectorName == 'WFC') and (chipNumber == 1))):
                 thisIndivParsIndices_A.append(2)
 
             thisIndivParsIndices_A = np.array(sorted(thisIndivParsIndices_A))
             thisIndivParsIndices_B = np.array(sorted(thisIndivParsIndices_B))
 
-        self.nParsIndiv_A = self.indivParsIndices_A.size
-        self.nParsIndiv_B = self.indivParsIndices_B.size
+            self.indivParsIndices_A.append(thisIndivParsIndices_A)
+            self.indivParsIndices_B.append(thisIndivParsIndices_B)
+
+            self.nParsIndiv_A.append(thisIndivParsIndices_A.size)
+            self.nParsIndiv_B.append(thisIndivParsIndices_B.size)
+
+        self.nParsIndiv_A = np.array(self.nParsIndiv_A)
+        self.nParsIndiv_B = np.array(self.nParsIndiv_B)
+
+        print(self.indivParsIndices_A)
+        print(self.nParsIndiv_A)
+        print(self.indivParsIndices_B)
+        print(self.nParsIndiv_B)
 
         self.splineParsIndices_A = []
         self.splineParsIndices_B = []
 
+        self.nParsSpline_A = []
+        self.nParsSpline_B = []
+
         n = self.pOrder + 1
-        for ii in range(n):
-            for jj in range(n - ii):
-                ppp = sip.getUpperTriangularIndex(ii, jj)
+        for i, chipNumber in enumerate(self.chip_numbers):
+            thisSplineParsIndices_A = []
+            thisSplineParsIndices_B = []
+            for ii in range(n):
+                for jj in range(n - ii):
+                    ppp = sip.getUpperTriangularIndex(ii, jj)
 
-                if ppp not in self.indivParsIndices_A:
-                    self.splineParsIndices_A.append(ppp)
-                if ppp not in self.indivParsIndices_B:
-                    self.splineParsIndices_B.append(ppp)
+                    if ppp not in self.indivParsIndices_A[i]:
+                        thisSplineParsIndices_A.append(ppp)
+                    if ppp not in self.indivParsIndices_B[i]:
+                        thisSplineParsIndices_B.append(ppp)
 
-        self.splineParsIndices_A = np.array(sorted(self.splineParsIndices_A))
-        self.splineParsIndices_B = np.array(sorted(self.splineParsIndices_B))
+            thisSplineParsIndices_A = np.array(sorted(thisSplineParsIndices_A))
+            thisSplineParsIndices_B = np.array(sorted(thisSplineParsIndices_B))
 
-        self.nParsSpline_A = self.splineParsIndices_A.size
-        self.nParsSpline_B = self.splineParsIndices_B.size
+            self.splineParsIndices_A.append(thisSplineParsIndices_A)
+            self.splineParsIndices_B.append(thisSplineParsIndices_B)
+
+            self.nParsSpline_A.append(thisSplineParsIndices_A.size)
+            self.nParsSpline_B.append(thisSplineParsIndices_B.size)
+
+        self.nParsSpline_A = np.array(self.nParsSpline_A)
+        self.nParsSpline_B = np.array(self.nParsSpline_B)
 
         ## self.nParsSpline_A = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_A
         ## self.nParsSpline_B = sip.getUpperTriangularMatrixNumberOfElements(self.pOrder + 1) - self.nParsIndiv_B
@@ -1549,7 +1575,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         ''';
 
         self.nOkay    = 0
-        self.nDataAll = np.zeros(2, dtype=int)
+        self.nDataAll = np.zeros(self.n_chips, dtype=int)
 
         self.okayIDs = []
 
@@ -1626,8 +1652,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
             self.etaAll.append([])
 
             self.XpAll_A.append([])
-            self.XkpAll_A.append([])
             self.XpAll_B.append([])
+            self.XkpAll_A.append([])
             self.XkpAll_B.append([])
 
             self.xyRawAll.append([])
@@ -1683,6 +1709,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             gc.set_threshold(2, 1, 1)
 
+            scalerArrayAll_A = []
+            scalerArrayAll_B = []
+
             for jjj, chip in enumerate(self.chip_numbers):
                 self.xiAll[jjj]  = np.hstack(self.xiAll[jjj])
                 self.etaAll[jjj] = np.hstack(self.etaAll[jjj])
@@ -1714,6 +1743,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 self.XpAll_B[jjj]  = None
                 self.XkpAll_A[jjj] = None
                 self.XkpAll_B[jjj] = None
+
 
             del self.XpAll_A
             del self.XkpAll_A
@@ -1806,25 +1836,33 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             self.nImages = self.nOkay
 
+            scalerArrayAll_A = []
+            scalerArrayAll_B = []
+
+            for jjj, chip in enumerate(self.chip_numbers):
+                P_A = self.nImages * self.nParsIndiv_A[jjj] + self.nParsK * self.nParsSpline_A[jjj]
+                P_B = self.nImages * self.nParsIndiv_B[jjj] + self.nParsK * self.nParsSpline_B[jjj]
+
+                print("CHIP {}:".format(chip))
+                print("P_A = {0:d}".format(P_A))
+                print("P_B = {0:d}".format(P_B))
+                print("N =", self.nDataAll[jjj])
+
+                thisScalerArrayAll_A = np.zeros(P_A)
+                thisScalerArrayAll_B = np.zeros(P_B)
+
+                if (self.nParsIndiv_A[jjj] > 0):
+                    thisScalerArrayAll_A[:self.nImages * self.nParsIndiv_A[jjj]]  = np.tile(self.scalerArray[self.indivParsIndices_A[jjj]], self.nImages)
+                scalerArrayAll_A[self.nImages  * self.nParsIndiv_A[jjj]:] = np.repeat(self.scalerArray[self.splineParsIndices_A[jjj]], self.nParsK)
+
+                if (self.nParsIndiv_B[jjj] > 0):
+                    thisScalerArrayAll_B[:self.nImages * self.nParsIndiv_B[jjj]]  = np.tile(self.scalerArray[self.indivParsIndices_B[jjj]], self.nImages)
+                scalerArrayAll_B[self.nImages  * self.nParsIndiv_B[jjj]:] = np.repeat(self.scalerArray[self.splineParsIndices_B[jjj]], self.nParsK)
+
+                scalerArrayAll_A.append(thisScalerArrayAll_A)
+                scalerArrayAll_B.append(thisScalerArrayAll_B)
+
             print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
-
-            P_A = self.nImages * self.nParsIndiv_A + self.nParsK * self.nParsSpline_A
-            P_B = self.nImages * self.nParsIndiv_B + self.nParsK * self.nParsSpline_B
-
-            print("P_A = {0:d}".format(P_A))
-            print("P_B = {0:d}".format(P_B))
-            print("N =", self.nDataAll)
-
-            scalerArrayAll_A = np.zeros(P_A)
-            scalerArrayAll_B = np.zeros(P_B)
-
-            if (self.nParsIndiv_A > 0):
-                scalerArrayAll_A[:self.nImages * self.nParsIndiv_A]  = np.tile(self.scalerArray[self.indivParsIndices_A], self.nImages)
-            scalerArrayAll_A[self.nImages  * self.nParsIndiv_A:] = np.repeat(self.scalerArray[self.splineParsIndices_A], self.nParsK)
-
-            if (self.nParsIndiv_B > 0):
-                scalerArrayAll_B[:self.nImages * self.nParsIndiv_B]  = np.tile(self.scalerArray[self.indivParsIndices_B], self.nImages)
-            scalerArrayAll_B[self.nImages  * self.nParsIndiv_B:] = np.repeat(self.scalerArray[self.splineParsIndices_B], self.nParsK)
 
             N_ITER_OUTER = 10
             N_ITER_INNER = 100
@@ -1943,11 +1981,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         coeffsA, res, rnk, s = linalg.lstsq(A_A.todense(), b_xi, overwrite_a=True, overwrite_b=True)
 
-                        coeffsA = coeffsA.flatten() * self.scalerX / scalerArrayAll_A
+                        coeffsA = coeffsA.flatten() * self.scalerX / scalerArrayAll_A[jjj]
 
                         coeffsB, res, rnk, s = linalg.lstsq(A_B.todense(), b_eta, overwrite_a=True, overwrite_b=True)
 
-                        coeffsB = coeffsB.flatten() * self.scalerY / scalerArrayAll_B
+                        coeffsB = coeffsB.flatten() * self.scalerY / scalerArrayAll_B[jjj]
 
                         if ((((iteration2 + 1) % 10) == 0) or (iteration2 == 0)) and saveIntermediateResults:
                             coeffsAFilename = "{0:s}/coeffsA_chip{1:d}_pOrder{2:d}_kOrder{3:d}_nKnots{4:d}_iter1_{5:03d}_iter2_{6:03d}.npy".format(
@@ -1961,8 +1999,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             np.save(coeffsBFilename, coeffsB)
 
                         ## Residuals already in pixel and in image axis
-                        residualsXi  = xiRef  - ((X_A.multiply(scalerArrayAll_A)) @ coeffsA)
-                        residualsEta = etaRef - ((X_B.multiply(scalerArrayAll_B)) @ coeffsB)
+                        residualsXi  = xiRef  - ((X_A.multiply(scalerArrayAll_A[jjj])) @ coeffsA)
+                        residualsEta = etaRef - ((X_B.multiply(scalerArrayAll_B[jjj])) @ coeffsB)
 
                         rmsXi  = np.sqrt(np.average(residualsXi ** 2,  weights=weights))
                         rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
@@ -2155,20 +2193,22 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
                             ## Find the shift and rotation of the reference coordinates
                             ## using the new zero-th order coefficients and rotation angle
-                            end_A = self.nImages * self.nParsIndiv_A
-                            end_B = self.nImages * self.nParsIndiv_B
+                            end_A = self.nImages * self.nParsIndiv_A[jjj]
+                            end_B = self.nImages * self.nParsIndiv_B[jjj]
 
-                            dxs.append(coeffsA[0:end_A:self.nParsIndiv_A])
-                            dys.append(coeffsB[0:end_B:self.nParsIndiv_B])
+                            dxs.append(coeffsA[0:end_A:self.nParsIndiv_A[jjj]])
+                            dys.append(coeffsB[0:end_B:self.nParsIndiv_B[jjj]])
 
                             if (self.pOrderIndiv == 0):
-                                '''
-                                start = self.nImages * self.nParsIndiv_A + self.nParsK
-                                end   = start + self.nParsK
+                                if (2 in self.indivParsIndices_A[jjj]):
+                                    print("Getting individual A3 coefficients...")
+                                    coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A[jjj]]
+                                else:
+                                    print("Getting A3 coefficients from time-dependent model...")
+                                    start = self.nImages * self.nParsIndiv_A[jjj] + self.nParsK
+                                    end   = start + self.nParsK
 
-                                coeffsA3 = self.XtAll @ coeffsA[start:end]
-                                ''';
-                                coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
+                                    coeffsA3 = self.XtAll @ coeffsA[start:end]
 
                                 print(self.XtAll.shape)
                                 print("A3:")
@@ -2176,7 +2216,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                                 ## coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
 
-                                start = self.nImages * self.nParsIndiv_B + self.nParsK
+                                start = self.nImages * self.nParsIndiv_B[jjj] + self.nParsK
                                 end   = start + self.nParsK
 
                                 coeffsB3 = self.XtAll @ coeffsB[start:end]
@@ -2186,8 +2226,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             else:
                                 thisP = 2
 
-                                coeffsA3 = coeffsA[thisP:end_A:self.nParsIndiv_A]
-                                coeffsB3 = coeffsB[thisP:end_B:self.nParsIndiv_B]
+                                coeffsA3 = coeffsA[thisP:end_A:self.nParsIndiv_A[jjj]]
+                                coeffsB3 = coeffsB[thisP:end_B:self.nParsIndiv_B[jjj]]
 
                             rolls.append(-np.arctan(coeffsA3 / coeffsB3))
 
@@ -2223,12 +2263,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
 
-                self._parseIndividualAndSplineCoefficientsDataFrame(chip, coeffsA, coeffsB,
+                self._parseIndividualAndSplineCoefficientsDataFrame(jjj, chip, coeffsA, coeffsB,
                                                                    modelCoeffsFilename=modelCoeffsFilename,
                                                                    indivDataFilename=indivDataFilename)
 
-                xiPred  = (X_A.multiply(scalerArrayAll_A)) @ coeffsA
-                etaPred = (X_B.multiply(scalerArrayAll_B)) @ coeffsB
+                xiPred  = (X_A.multiply(scalerArrayAll_A[jjj])) @ coeffsA
+                etaPred = (X_B.multiply(scalerArrayAll_B[jjj])) @ coeffsB
 
                 residualsXi  = xiRef  - xiPred
                 residualsEta = etaRef - etaPred
@@ -2400,16 +2440,16 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             thisCoeffsA = np.zeros((self.nParsSIP, 1), dtype=float)
                             thisCoeffsB = np.zeros_like(thisCoeffsA)
 
-                            for p in self.indivParsIndices_A:
+                            for p in self.indivParsIndices_A[jjj]:
                                 thisCoeffsA[p, 0] = self._getIndividualCoeffs(rootname, p, 0, chip, df_indiv_data)
 
-                            for p in self.indivParsIndices_B:
+                            for p in self.indivParsIndices_B[jjj]:
                                 thisCoeffsB[p, 0] = self._getIndividualCoeffs(rootname, p, 1, chip, df_indiv_data)
 
-                            for p in self.splineParsIndices_A:
+                            for p in self.splineParsIndices_A[jjj]:
                                 thisCoeffsA[p, 0] = Xt @ self._getSplineCoeffs(p, 0, chip, df_spline_coeffs)
 
-                            for p in self.splineParsIndices_B:
+                            for p in self.splineParsIndices_B[jjj]:
                                 thisCoeffsB[p, 0] = Xt @ self._getSplineCoeffs(p, 1, chip, df_spline_coeffs)
 
                             xPred = np.matmul(X * scalerArray, thisCoeffsA).flatten()
@@ -2924,20 +2964,20 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                               scalerY=self.scalerY)
 
 
-                        Xkp_A = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_A))
-                        Xkp_B = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_B))
+                        Xkp_A = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_A[jjj]))
+                        Xkp_B = np.zeros((Xp.shape[0], self.nParsK * self.nParsSpline_B[jjj]))
 
-                        for ii, p in enumerate(self.splineParsIndices_A):
+                        for ii, p in enumerate(self.splineParsIndices_A[jjj]):
                             for k in range(self.nParsK):
                                 Xkp_A[:, ii * self.nParsK + k] = Xt[0, k] * Xp[:, p]
 
-                        for ii, p in enumerate(self.splineParsIndices_B):
+                        for ii, p in enumerate(self.splineParsIndices_B[jjj]):
                             for k in range(self.nParsK):
                                 Xkp_B[:, ii * self.nParsK + k] = Xt[0, k] * Xp[:, p]
 
-                        self.XpAll_A[jjj].append(Xp[:, self.indivParsIndices_A])
-                        if (self.indivParsIndices_B.size > 0):
-                            self.XpAll_B[jjj].append(Xp[:, self.indivParsIndices_B])
+                        self.XpAll_A[jjj].append(Xp[:, self.indivParsIndices_A[jjj]])
+                        if (self.indivParsIndices_B[jjj].size > 0):
+                            self.XpAll_B[jjj].append(Xp[:, self.indivParsIndices_B[jjj]])
 
                         self.XkpAll_A[jjj].append(sparse.csr_matrix(Xkp_A, dtype='d'))
                         self.XkpAll_B[jjj].append(sparse.csr_matrix(Xkp_B, dtype='d'))
@@ -2998,13 +3038,13 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                              sx, sy, roll)
         return xiRef, etaRef
 
-    def _getColumnNamesForIndividualCoefficients(self):
+    def _getColumnNamesForIndividualCoefficients(self, jjj):
         columns_indiv = ['rootname', 'tObs', 'chip']
 
         for p in range(self.nParsSIP):
-            if (p in self.indivParsIndices_A):
+            if (p in self.indivParsIndices_A[jjj]):
                 columns_indiv.append(r'{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[0], p + 1))
-            if (p in self.indivParsIndices_B):
+            if (p in self.indivParsIndices_B[jjj]):
                 columns_indiv.append(r'{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[1], p + 1))
         return columns_indiv
 
@@ -3016,13 +3056,13 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         return columns_model
 
-    def _parseIndividualAndSplineCoefficientsDataFrame(self, chip, coeffsA, coeffsB,
+    def _parseIndividualAndSplineCoefficientsDataFrame(self, jjj, chip, coeffsA, coeffsB,
                                                        modelCoeffsFilename='./splineCoeffs.csv',
                                                        indivDataFilename='./individualCoeffs.csv'):
         data_indiv = [self.rootnames, self.tObs, np.full_like(self.tObs, chip, dtype=int)]
         data_model = []
 
-        columns_indiv = self._getColumnNamesForIndividualCoefficients()
+        columns_indiv = self._getColumnNamesForIndividualCoefficients(jjj)
         columns_model = self._getColumnNamesForSplineCoefficients()
 
         for p in range(self.nParsSIP):
@@ -3030,32 +3070,32 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 coeffsIndiv = None
                 coeffsModel = None
 
-                if ((p in self.indivParsIndices_A) or (p in self.indivParsIndices_B)):
-                    if (axis == 0) and (p in self.indivParsIndices_A):
-                        iii  = np.argwhere(self.indivParsIndices_A == p).flatten()[0]
-                        end  = self.nImages * self.nParsIndiv_A
-                        jump = self.nParsIndiv_A
+                if ((p in self.indivParsIndices_A[jjj]) or (p in self.indivParsIndices_B[jjj])):
+                    if (axis == 0) and (p in self.indivParsIndices_A[jjj]):
+                        iii  = np.argwhere(self.indivParsIndices_A[jjj] == p).flatten()[0]
+                        end  = self.nImages * self.nParsIndiv_A[jjj]
+                        jump = self.nParsIndiv_A[jjj]
 
                         coeffsIndiv = coeffsA[iii:end:jump]
 
-                    elif (axis == 1) and (p in self.indivParsIndices_B):
-                        iii  = np.argwhere(self.indivParsIndices_B == p).flatten()[0]
-                        end  = self.nImages * self.nParsIndiv_B
-                        jump = self.nParsIndiv_B
+                    elif (axis == 1) and (p in self.indivParsIndices_B[jjj]):
+                        iii  = np.argwhere(self.indivParsIndices_B[jjj] == p).flatten()[0]
+                        end  = self.nImages * self.nParsIndiv_B[jjj]
+                        jump = self.nParsIndiv_B[jjj]
 
                         coeffsIndiv = coeffsB[iii:end:jump]
 
-                if ((p in self.splineParsIndices_A) or (p in self.splineParsIndices_B)):
-                    if (axis == 0) and (p in self.splineParsIndices_A):
-                        iii   = np.argwhere(self.splineParsIndices_A == p).flatten()[0]
-                        start = self.nImages * self.nParsIndiv_A + iii * self.nParsK
+                if ((p in self.splineParsIndices_A[jjj]) or (p in self.splineParsIndices_B[jjj])):
+                    if (axis == 0) and (p in self.splineParsIndices_A[jjj]):
+                        iii   = np.argwhere(self.splineParsIndices_A[jjj] == p).flatten()[0]
+                        start = self.nImages * self.nParsIndiv_A[jjj] + iii * self.nParsK
                         end   = start + self.nParsK
 
                         coeffsModel = coeffsA[start:end]
 
-                    elif (axis == 1) and (p in self.splineParsIndices_B):
-                        iii   = np.argwhere(self.splineParsIndices_B == p).flatten()[0]
-                        start = self.nImages * self.nParsIndiv_B + iii * self.nParsK
+                    elif (axis == 1) and (p in self.splineParsIndices_B[jjj]):
+                        iii   = np.argwhere(self.splineParsIndices_B[jjj] == p).flatten()[0]
+                        start = self.nImages * self.nParsIndiv_B[jjj] + iii * self.nParsK
                         end   = start + self.nParsK
 
                         coeffsModel = coeffsB[start:end]
