@@ -3118,7 +3118,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
         df_spline_coeffs.to_csv(modelCoeffsFilename, index=False)
 
         df_indiv_data = pd.DataFrame(np.vstack(data_indiv).T.tolist(), columns=columns_indiv).sort_values(
-            ['rootname', 'chip'], ascending=[True, True]).reset_index()
+            ['rootname', 'chip'], ascending=[True, True], ignore_index=True).reset_index(drop=True)
 
         df_indiv_data.to_csv(indivDataFilename, index=False)
 
