@@ -1853,16 +1853,23 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 if (self.nParsIndiv_A[jjj] > 0):
                     thisScalerArrayAll_A[:self.nImages * self.nParsIndiv_A[jjj]]  = np.tile(self.scalerArray[self.indivParsIndices_A[jjj]], self.nImages)
-                scalerArrayAll_A[self.nImages  * self.nParsIndiv_A[jjj]:] = np.repeat(self.scalerArray[self.splineParsIndices_A[jjj]], self.nParsK)
+                thisScalerArrayAll_A[self.nImages  * self.nParsIndiv_A[jjj]:] = np.repeat(self.scalerArray[self.splineParsIndices_A[jjj]], self.nParsK)
 
                 if (self.nParsIndiv_B[jjj] > 0):
                     thisScalerArrayAll_B[:self.nImages * self.nParsIndiv_B[jjj]]  = np.tile(self.scalerArray[self.indivParsIndices_B[jjj]], self.nImages)
-                scalerArrayAll_B[self.nImages  * self.nParsIndiv_B[jjj]:] = np.repeat(self.scalerArray[self.splineParsIndices_B[jjj]], self.nParsK)
+                thisScalerArrayAll_B[self.nImages  * self.nParsIndiv_B[jjj]:] = np.repeat(self.scalerArray[self.splineParsIndices_B[jjj]], self.nParsK)
 
                 scalerArrayAll_A.append(thisScalerArrayAll_A)
                 scalerArrayAll_B.append(thisScalerArrayAll_B)
 
             print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
+
+            print(scalerArrayAll_A[0].size, scalerArrayAll_A[1].size)
+            print(scalerArrayAll_B[0].size, scalerArrayAll_B[1].size)
+            print(scalerArrayAll_A[0])
+            print(scalerArrayAll_A[1])
+            print(scalerArrayAll_B[0])
+            print(scalerArrayAll_B[1])
 
             N_ITER_OUTER = 10
             N_ITER_INNER = 100
@@ -2198,6 +2205,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             dxs.append(coeffsA[0:end_A:self.nParsIndiv_A[jjj]])
                             dys.append(coeffsB[0:end_B:self.nParsIndiv_B[jjj]])
+
+                            print("A1:")
+                            print(coeffsA[0:end_A:self.nParsIndiv_A[jjj]])
+                            print("B1:")
+                            print(coeffsB[0:end_B:self.nParsIndiv_B[jjj]])
 
                             if (self.pOrderIndiv == 0):
                                 if (2 in self.indivParsIndices_A[jjj]):
