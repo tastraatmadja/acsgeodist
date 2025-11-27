@@ -551,7 +551,7 @@ class SIPEstimator:
 
                                 ## At the last iteration, re-calculate the shift and rolls
                                 ## if ((iteration2+1) == (N_ITER_INNER)):
-                                if ((weightSumDiff < 1.e-9) or ((iteration2 + 1) == N_ITER_INNER) or
+                                if ((weightSumDiff < 1.e-15) or ((iteration2 + 1) == N_ITER_INNER) or
                                         (weightSum <= (X.shape[1] + 1))):
                                     ## Shift and rotate the reference coordinates using the new
                                     ## zero-th order coefficients and rotation angle
@@ -1264,7 +1264,7 @@ class SIPEstimator:
 
                                 ## At the last iteration, re-calculate the shift and rolls
                                 ## if ((iteration2+1) == (N_ITER_INNER)):
-                                if ((weightSumDiff < 1.e-9) or (iteration2 + 1) == (N_ITER_INNER)):
+                                if ((weightSumDiff < 1.e-15) or (iteration2 + 1) == (N_ITER_INNER)):
                                     ## Shift and rotate the reference coordinates using the new
                                     ## zero-th order coefficients and rotation angle
                                     sx, sy = coeffs[0], coeffs[1]
@@ -2180,7 +2180,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         ## At the last iteration, re-calculate the shift and rolls
                         ## if ((iteration2+1) == (N_ITER_INNER)):
-                        if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
+                        if ((weightSumDiff < 1.e-15) or (iteration2 + 1) == (N_ITER_INNER)):
                             ## Find the shift and rotation of the reference coordinates
                             ## using the new zero-th order coefficients and rotation angle
                             end_A = self.nImages * self.nParsIndiv_A[jjj]
@@ -2190,33 +2190,34 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             thisCoeffsB = np.zeros_like(thisCoeffsA)
                             for ppp, thisP in enumerate([0, 2]):
                                 if thisP in self.indivParsIndices_A[jjj]:
-                                    print("Getting individual A{} coefficients...".format(thisP+1))
+                                    ## print("Getting individual A{} coefficients...".format(thisP+1))
                                     iii = np.argwhere(self.indivParsIndices_A[jjj] == thisP).flatten()[0]
-                                    print(thisP, iii)
+                                    ## print(thisP, iii)
                                     thisCoeffsA[ppp] = coeffsA[iii:end_A:self.nParsIndiv_A[jjj]]
                                 elif thisP in self.splineParsIndices_A[jjj]:
-                                    print("Getting A{} coefficients from time-dependent model...".format(thisP+1))
+                                    ## print("Getting A{} coefficients from time-dependent model...".format(thisP+1))
                                     iii = np.argwhere(self.splineParsIndices_A[jjj] == thisP).flatten()[0]
-                                    print(thisP, iii)
+                                    ## print(thisP, iii)
                                     start = end_A + iii * self.nParsK
                                     end   = start + self.nParsK
 
                                     thisCoeffsA[ppp] = self.XtAll @ coeffsA[start:end]
 
                                 if thisP in self.indivParsIndices_B[jjj]:
-                                    print("Getting individual B{} coefficients...".format(thisP+1))
+                                    ## print("Getting individual B{} coefficients...".format(thisP+1))
                                     iii = np.argwhere(self.indivParsIndices_B[jjj] == thisP).flatten()[0]
-                                    print(thisP, iii)
+                                    ## print(thisP, iii)
                                     thisCoeffsB[ppp] = coeffsB[iii:end_B:self.nParsIndiv_B[jjj]]
                                 elif thisP in self.splineParsIndices_B[jjj]:
-                                    print("Getting B{} coefficients from time-dependent model...".format(thisP+1))
+                                    ## print("Getting B{} coefficients from time-dependent model...".format(thisP+1))
                                     iii = np.argwhere(self.splineParsIndices_B[jjj] == thisP).flatten()[0]
-                                    print(thisP, iii)
+                                    ## print(thisP, iii)
                                     start = end_B + iii * self.nParsK
                                     end   = start + self.nParsK
 
                                     thisCoeffsB[ppp] = self.XtAll @ coeffsB[start:end]
 
+                            '''
                             print("A1:")
                             print(thisCoeffsA[0])
                             print("B1:")
@@ -2225,54 +2226,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             print(thisCoeffsA[1])
                             print("B3:")
                             print(thisCoeffsB[1])
+                            ''';
 
                             dxs.append(thisCoeffsA[0])
                             dys.append(thisCoeffsB[0])
                             rolls.append(-np.arctan(thisCoeffsA[1] / thisCoeffsB[1]))
 
-                            '''
-                            dxs.append(coeffsA[0:end_A:self.nParsIndiv_A[jjj]])
-                            dys.append(coeffsB[0:end_B:self.nParsIndiv_B[jjj]])
-
-                            print("A1:")
-                            print(coeffsA[0:end_A:self.nParsIndiv_A[jjj]])
-                            print("B1:")
-                            print(coeffsB[0:end_B:self.nParsIndiv_B[jjj]])
-
-                            if (self.pOrderIndiv == 0):
-                                if (2 in self.indivParsIndices_A[jjj]):
-                                    print("Getting individual A3 coefficients...")
-                                    coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A[jjj]]
-                                else:
-                                    print("Getting A3 coefficients from time-dependent model...")
-                                    start = self.nImages * self.nParsIndiv_A[jjj] + self.nParsK
-                                    end   = start + self.nParsK
-
-                                    coeffsA3 = self.XtAll @ coeffsA[start:end]
-
-                                print(self.XtAll.shape)
-                                print("A3:")
-                                print(coeffsA3)
-
-                                ## coeffsA3 = coeffsA[1:end_A:self.nParsIndiv_A]
-
-                                start = self.nImages * self.nParsIndiv_B[jjj] + self.nParsK
-                                end   = start + self.nParsK
-
-                                coeffsB3 = self.XtAll @ coeffsB[start:end]
-
-                                print("B3:")
-                                print(coeffsB3)
-                            else:
-                                thisP = 2
-
-                                coeffsA3 = coeffsA[thisP:end_A:self.nParsIndiv_A[jjj]]
-                                coeffsB3 = coeffsB[thisP:end_B:self.nParsIndiv_B[jjj]]
-                            rolls.append(-np.arctan(coeffsA3 / coeffsB3))
-                            ''';
-                            
-                            print("ROLL_ANGLES:")
-                            print(rolls[iteration])
+                            ## print("ROLL_ANGLES:")
+                            ## print(rolls[iteration])
 
                             break
                         else:
