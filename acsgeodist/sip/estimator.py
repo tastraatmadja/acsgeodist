@@ -2415,8 +2415,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             xiRef  = self.refCat.iloc[refStarIdx]['xt'].values / vaFactor
                             etaRef = self.refCat.iloc[refStarIdx]['yt'].values / vaFactor
 
-                            nStars = xiRef.size
-
                             XC = hst1pass['X'][selection] - self.X0
                             YC = hst1pass['Y'][selection] - self.Y0[jjj]
 
@@ -2471,8 +2469,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             ## Now we take the normal triad pqr_0 of the reference coordinate
                             pqr0Im = coords.getNormalTriad(c0Im)
 
+                            selection0 = (hst1pass['k'] == chip) & (hst1pass['q'] > 0) & (hst1pass['q'] <= self.qMax)
+
+                            nStars0 = len(hst1pass['refCatIndex'][selection0].value)
+
                             selection  = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & hst1pass['retained']
                             refStarIdx = hst1pass['refCatIndex'][selection].value
+
+                            nStars = refStarIdx.size
 
                             hst1pass['xiRef'][selection]  = self.refCat.iloc[refStarIdx]['xt'].values / vaFactor
                             hst1pass['etaRef'][selection] = self.refCat.iloc[refStarIdx]['yt'].values / vaFactor
@@ -2606,7 +2610,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
                                 baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1,
                                 posTarg2)
-                            textResults += " {0:d} {1:d}".format(0, nStars)
+                            textResults += " {0:d} {1:d} {2:d}".format(0, nStars0, nStars)
                             textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                             textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
                             textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
