@@ -551,7 +551,7 @@ class SIPEstimator:
 
                                 ## At the last iteration, re-calculate the shift and rolls
                                 ## if ((iteration2+1) == (N_ITER_INNER)):
-                                if ((weightSumDiff < 1.e-15) or ((iteration2 + 1) == N_ITER_INNER) or
+                                if ((weightSumDiff < 1.e-12) or ((iteration2 + 1) == N_ITER_INNER) or
                                         (weightSum <= (X.shape[1] + 1))):
                                     ## Shift and rotate the reference coordinates using the new
                                     ## zero-th order coefficients and rotation angle
@@ -1264,7 +1264,7 @@ class SIPEstimator:
 
                                 ## At the last iteration, re-calculate the shift and rolls
                                 ## if ((iteration2+1) == (N_ITER_INNER)):
-                                if ((weightSumDiff < 1.e-15) or (iteration2 + 1) == (N_ITER_INNER)):
+                                if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
                                     ## Shift and rotate the reference coordinates using the new
                                     ## zero-th order coefficients and rotation angle
                                     sx, sy = coeffs[0], coeffs[1]
@@ -1441,7 +1441,7 @@ class SIPEstimator:
 class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
                  detectorName='WFC', qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0,
-                 max_pos_targs=0.0, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
+                 min_n_refstar_ratio=0.6, max_pos_targs=0.0, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
                  cross_match=True):
         super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
                        min_n_refstar=min_n_refstar,
@@ -2180,7 +2180,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         ## At the last iteration, re-calculate the shift and rolls
                         ## if ((iteration2+1) == (N_ITER_INNER)):
-                        if ((weightSumDiff < 1.e-15) or (iteration2 + 1) == (N_ITER_INNER)):
+                        if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
                             ## Find the shift and rotation of the reference coordinates
                             ## using the new zero-th order coefficients and rotation angle
                             end_A = self.nImages * self.nParsIndiv_A[jjj]
