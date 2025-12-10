@@ -335,8 +335,6 @@ class SIPEstimator:
                             for iteration2 in range(N_ITER_INNER):
                                 nIterTotal += 1
 
-                                nStars = xiRef.size
-
                                 ## Initialize the linear regression
                                 reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
 
@@ -647,8 +645,14 @@ class SIPEstimator:
                     ## Now we take the normal triad pqr_0 of the reference coordinate
                     pqr0Im = coords.getNormalTriad(c0Im)
 
+                    selection0 = (hst1pass['k'] == k) & (hst1pass['q'] > 0) & (hst1pass['q'] <= self.qMax)
+
+                    nStars0 = len(hst1pass['refCatIndex'][selection0].value)
+
                     selection  = (hst1pass['k'] == k) & (hst1pass['refCatIndex'] >= 0) & hst1pass['retained']
                     refStarIdx = hst1pass['refCatIndex'][selection].value
+
+                    nStars = refStarIdx.size
 
                     XCorr = hst1pass['xPred'][selection].value
                     YCorr = hst1pass['yPred'][selection].value
@@ -757,7 +761,7 @@ class SIPEstimator:
 
                     textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
                         rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
-                    textResults += " {0:d} {1:d}".format(nIterTotal, nStars)
+                    textResults += " {0:d} {1:d} {2:d}".format(nIterTotal, nStars0, nStars)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsX, rmsY)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                     textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
