@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.interpolate import griddata
+
 def get_dtab_ftab_data(path):
     tabdata = np.loadtxt(path)
     x,y,dx,dy = tabdata.T
@@ -10,6 +11,6 @@ def interp_dtab_ftab_data(path, x, y, x_divby, y_divby):
     xshape,yshape = int(xtab.max()),int(ytab.max())
     x_eval = x/x_divby * (xshape - 1) + 1
     y_eval = y/y_divby * (yshape - 1) + 1
-    dx_interp = griddata((xtab,ytab), dxtab, np.array([x_eval,y_eval]).T, method='cubic')
-    dy_interp = griddata((xtab,ytab), dytab, np.array([x_eval,y_eval]).T, method='cubic')
+    dx_interp = griddata((xtab,ytab), dxtab, np.array([x_eval,y_eval]).T, method='cubic', fill_value=0)
+    dy_interp = griddata((xtab,ytab), dytab, np.array([x_eval,y_eval]).T, method='cubic', fill_value=0)
     return x_eval, y_eval, dx_interp, dy_interp

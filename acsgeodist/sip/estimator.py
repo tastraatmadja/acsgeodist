@@ -204,6 +204,8 @@ class SIPEstimator:
                 if not self.individualZP:
                     dxs, dys, rolls = [], [], []
 
+                corners = []
+
                 textResults = ""
                 for jj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
                                                                 self.header_numbers,
@@ -578,6 +580,16 @@ class SIPEstimator:
                     ## print("SHIFTS_Y:", dys)
                     ## print("ROLLS:", rolls)
 
+                    if (self.individualZP or (chip == 2)):
+                        linearTransformFilename = "{0:s}/linearTransform_{1:s}_chip{2:d}_pOrder{3:d}.csv".format(outDir,
+                                                                                                                 rootname,
+                                                                                                                 chip,
+                                                                                                                 pOrder)
+
+                        df_linear = pd.DataFrame(data={'dx': dxs, 'dy': dys, 'rotation': rolls})
+
+                        df_linear.to_csv(linearTransformFilename, index=True)
+
                     ## Now that we have the coefficients, we repeat the model building for ALL objects in the chip
                     selection = (hst1pass['k'] == k)
 
@@ -591,6 +603,9 @@ class SIPEstimator:
                     XC = hst1pass['X'][selection] - self.X0
                     YC = hst1pass['Y'][selection] - self.Y0[jj]
 
+                    XCorners = np.array([0.5, 0.5, naxis1+0.5, naxis1+0.5, 0.5])
+                    YCorners = np.array([0.5, naxis2+0.5, naxis2+0.5, 0.5, 0.5])
+
                     if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
@@ -603,7 +618,27 @@ class SIPEstimator:
                         XC -= (dcorr[:, 2] - fcorr[:, 2])
                         YC -= (dcorr[:, 3] - fcorr[:, 3])
 
+                        dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], XCorners, YCorners,
+                                                                     self.XRef * 2, self.YRef * 2)).T
+                        fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], XCorners, YCorners,
+                                                                     self.XRef * 2, self.YRef * 2)).T
+
+                        print(XCorners)
+                        print(YCorners)
+                        print(dcorr)
+                        print(fcorr)
+                        ## Apply the lithographic mask correction
+                        XCorners -= (dcorr[:, 2] - fcorr[:, 2])
+                        YCorners -= (dcorr[:, 3] - fcorr[:, 3])
+
+                    ## Apply the zero points to the corner points
+                    XCorners -= self.X0
+                    YCorners -= self.Y0[0]
+
                     X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
+
+                    XXCorners, scalerArrayCorners = sip.buildModel(XCorners, YCorners, pOrder, scalerX=self.scalerX,
+                                                                   scalerY=self.scalerY)
 
                     for iiii in range(len(dxs)):
                         sx   = dxs[iiii]
@@ -614,6 +649,9 @@ class SIPEstimator:
 
                     xiPred  = np.matmul(X * scalerArray, coeffs[0::2])
                     etaPred = np.matmul(X * scalerArray, coeffs[1::2])
+
+                    xiCorners  = np.matmul(XXCorners * scalerArray, coeffs[0::2])
+                    etaCorners = np.matmul(XXCorners * scalerArray, coeffs[1::2])
 
                     hst1pass['xPred'][selection] = xiPred
                     hst1pass['yPred'][selection] = etaPred
@@ -708,6 +746,23 @@ class SIPEstimator:
                         print(CDMatrix)
                         print(hst1pass['resXi', 'resEta'][selection].to_pandas().describe())
 
+
+                    ## Build the transformation model for the corners
+                    HCorners, _ = sip.buildModel(xiCorners, etaCorners, 1)
+
+                    thisCorner = np.vstack([(((HCorners @ CDMatrix[0]) * u.deg) /
+                                             acsconstants.ACS_PLATESCALE).to_value(u.pix),
+                                            (((HCorners @ CDMatrix[1]) * u.deg) /
+                                             acsconstants.ACS_PLATESCALE).to_value(u.pix)])
+
+                    corners.append(thisCorner)
+
+                    print("CORNERS {}".format(chipTitle))
+                    print(xiCorners)
+                    print(etaCorners)
+                    print(HCorners)
+                    print(thisCorner.shape)
+
                     alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
 
                     xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
@@ -722,6 +777,12 @@ class SIPEstimator:
 
                     hst1pass['xiRef'][selection]  = hst1pass['xiRef'][selection] + xi0
                     hst1pass['etaRef'][selection] = hst1pass['etaRef'][selection] + eta0
+
+                    ## Re-center the corners
+                    thisCorner[0] += xi0
+                    thisCorner[1] += eta0
+
+                    print(repr(thisCorner))
 
                     ## Calculate the residuals
                     hst1pass['resXi'][selection] = (
@@ -803,7 +864,11 @@ class SIPEstimator:
                     aperturesRejected.plot(color='#d95f02', lw=1, alpha=1, ax=axes[jjj,0],
                                            rasterized=True);  ## BROWNS are accepted sources
 
-                    axes[jjj,0].set_title('{0:s} --- {1:s}'.format(rootname, chipTitle))
+                    axes[jjj,0].set_title('{0:s} --- {1:s} --- {2:d} --- {3:d} ---  {4:0.3f}'.format(rootname,
+                                                                                                     chipTitle, nStars0,
+                                                                                                     nStars,
+                                                                                                     float(nStars) /
+                                                                                                     float(nStars0)))
 
                     axes[jjj,0].xaxis.set_major_locator(ticker.AutoLocator())
                     axes[jjj,0].xaxis.set_minor_locator(ticker.AutoMinorLocator())
@@ -898,7 +963,7 @@ class SIPEstimator:
                 fig3, ax3 = plt.subplots(nrows=3, ncols=3, figsize=(xSize3, ySize3), sharex='col', sharey='row',
                                        width_ratios=[1.0, 0.25, 0.25], height_ratios=[0.25, 0.25, 1.0])
 
-                ax3[0,0].set_title(hduList[0].header['ROOTNAME']+' --- '+hduList[0].header['DATE-OBS']+' UT'+hduList[0].header['TIME-OBS'])
+                ax3[0,0].set_title(hduList[0].header['ROOTNAME']+' --- '+hduList[0].header['DATE-OBS']+' UT'+hduList[0].header['TIME-OBS'] + ' --- ' + '{0:0.1f} s'.format(float(hduList[0].header['EXPTIME'])))
 
                 ax3[0, 1].set_visible(False)
                 ax3[0, 2].set_visible(False)
@@ -926,6 +991,24 @@ class SIPEstimator:
                                 s=markerSize3, rasterized=True)
                 sns.scatterplot(data=df_resids[selection], x='resEta', y='eta', hue='weights', legend=False, ax=ax3[2, 2],
                                 s=markerSize3, rasterized=True)
+
+                for jj, (chipNumber, chipColor) in enumerate(zip(self.chip_numbers, self.chip_colors)):
+                    ax3[2,0].plot(corners[jj][0], corners[jj][1], '-', color=chipColor)
+
+                originPixRef = corners[0][:, 0]
+                xAxisPixRef  = corners[0][:, 3]
+                yAxisPixRef  = corners[0][:, 1]
+
+                xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
+                yAxisPixRef = originPixRef + self.yAxisExtendFactor * (yAxisPixRef - originPixRef)
+
+                ax3[2,0].annotate(r'$x$', color='r', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
+                                  textcoords='data', ha='center', va='center',
+                                  arrowprops=dict(arrowstyle="<-", color="r"), zorder=5)
+
+                ax3[2,0].annotate(r'$y$', color='r', xy=originPixRef, xycoords='data', xytext=yAxisPixRef,
+                                  textcoords='data', ha='center', va='center',
+                                  arrowprops=dict(arrowstyle="<-", color="r"), zorder=5)
 
                 resLabels = ['res_xi [pix]', 'res_eta [pix]']
 
@@ -1347,6 +1430,7 @@ class SIPEstimator:
             self.chip_numbers   = acsconstants.CHIP_NUMBER
             self.header_numbers = acsconstants.HEADER_NUMBER
             self.chip_labels    = acsconstants.WFC_LABELS
+            self.chip_colors    = acsconstants.WFC_COLORS
 
             self.X0 = 2048.00
             self.Y0 = np.array([1024.0, 2048.0 + 1024.0])
@@ -1357,11 +1441,14 @@ class SIPEstimator:
             self.scalerX = 2048.0
             self.scalerY = 1024.0
 
+            self.yAxisExtendFactor = 2.5
+
         elif (self.detectorName == 'SBC'):
             self.n_chips        = acsconstants.SBC_N_CHIPS
             self.chip_numbers   = acsconstants.SBC_CHIP_NUMBER
             self.header_numbers = acsconstants.SBC_HEADER_NUMBER
             self.chip_labels    = acsconstants.SBC_LABELS
+            self.chip_colors    = acsconstants.SBC_COLORS
 
             self.X0 = 512.0
             self.Y0 = np.array([512.0])
@@ -1371,6 +1458,8 @@ class SIPEstimator:
 
             self.scalerX = 512.0
             self.scalerY = 512.0
+
+            self.yAxisExtendFactor = 1.2
 
     def _getOkayToProceed(self, catalogue):
         matchRes = np.sqrt((catalogue['xPred'] - catalogue['xRef']) ** 2 + (catalogue['yPred'] - catalogue['yRef']) ** 2)
@@ -2718,7 +2807,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             ax3[0, 0].set_title(
                                 hduList[0].header['ROOTNAME'] + ' --- ' + hduList[0].header['DATE-OBS'] + ' UT' +
-                                hduList[0].header['TIME-OBS'])
+                                hduList[0].header['TIME-OBS'] + ' --- ' +
+                                '{0:0.1f} s'.format(float(hduList[0].header['EXPTIME'])))
 
                             ax3[0, 1].set_visible(False)
                             ax3[0, 2].set_visible(False)

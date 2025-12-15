@@ -45,3 +45,4 @@ SBC_CHIP_NUMBER    = np.array([1], dtype=int)
 SBC_HEADER_NUMBER  = np.array([1], dtype=int)
 SBC_N_CHIPS        = len(SBC_CHIP_NUMBER)
 SBC_LABELS         = ['SBC']
+SBC_COLORS         = ['#33a02c']
