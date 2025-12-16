@@ -55,18 +55,19 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 
 class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
-                 min_n_refstar=100, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
-                 cross_match=True, min_ruwe=0.8, max_ruwe=1.2):
-        self.individualZP  = individualZP
-        self.refCat        = deepcopy(referenceCatalog)
-        self.wcsRef        = deepcopy(referenceWCS)
-        self.tRef0         = deepcopy(tRef0)
-        self.qMax          = qMax
-        self.min_n_app     = min_n_app
-        self.max_pix_tol   = max_pix_tol
-        self.min_n_refstar = min_n_refstar
-        self.alpha0        = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
-        self.delta0        = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
+                 min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True,
+                 make_lithographic_and_filter_mask_corrections=True, cross_match=True, min_ruwe=0.8, max_ruwe=1.2):
+        self.individualZP      = individualZP
+        self.refCat            = deepcopy(referenceCatalog)
+        self.wcsRef            = deepcopy(referenceWCS)
+        self.tRef0             = deepcopy(tRef0)
+        self.qMax              = qMax
+        self.min_n_app         = min_n_app
+        self.max_pix_tol       = max_pix_tol
+        self.min_n_refstar     = min_n_refstar
+        self.min_refstar_ratio = min_refstar_ratio
+        self.alpha0            = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
+        self.delta0            = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
 
         self.make_lithographic_and_filter_mask_corrections = make_lithographic_and_filter_mask_corrections
 
@@ -152,7 +153,7 @@ class SIPEstimator:
 
         hst1pass = table.hstack([ascii.read(hst1passFile, format='csv'), ascii.read(addendumFilename, format='csv')])
 
-        okayToProceed, nGoodData = self._getOkayToProceed(hst1pass)
+        okayToProceed, nGoodData, refStarRatios = self._getOkayToProceed(hst1pass)
 
         print("OKAY TO PROCEED:", okayToProceed)
 
@@ -608,6 +609,7 @@ class SIPEstimator:
                         XC -= (dcorr[:, 2] - fcorr[:, 2])
                         YC -= (dcorr[:, 3] - fcorr[:, 3])
 
+                        ## Repeat for the corners
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], XCorners, YCorners,
                                                                      self.XRef * 2, self.YRef * 2)).T
                         fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], XCorners, YCorners,
@@ -623,8 +625,8 @@ class SIPEstimator:
 
                     X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
 
-                    XXCorners, scalerArrayCorners = sip.buildModel(XCorners, YCorners, pOrder, scalerX=self.scalerX,
-                                                                   scalerY=self.scalerY)
+                    XXCorners, _ = sip.buildModel(XCorners, YCorners, pOrder, scalerX=self.scalerX,
+                                                  scalerY=self.scalerY)
 
                     for iiii in range(len(dxs)):
                         sx   = dxs[iiii]
@@ -732,7 +734,6 @@ class SIPEstimator:
                         print(CDMatrix)
                         print(hst1pass['resXi', 'resEta'][selection].to_pandas().describe())
 
-
                     ## Build the transformation model for the corners
                     HCorners, _ = sip.buildModel(xiCorners, etaCorners, 1)
 
@@ -740,8 +741,6 @@ class SIPEstimator:
                                              acsconstants.ACS_PLATESCALE).to_value(u.pix),
                                             (((HCorners @ CDMatrix[1]) * u.deg) /
                                              acsconstants.ACS_PLATESCALE).to_value(u.pix)])
-
-                    corners.append(thisCorner)
 
                     alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
 
@@ -761,6 +760,8 @@ class SIPEstimator:
                     ## Re-center the corners
                     thisCorner[0] += xi0
                     thisCorner[1] += eta0
+
+                    corners.append(thisCorner)
 
                     ## Calculate the residuals
                     hst1pass['resXi'][selection] = (
@@ -799,7 +800,8 @@ class SIPEstimator:
                                                                hst1pass['weights'][selection].value))
 
                     textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
-                        rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2)
+                        rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1,
+                        posTarg2)
                     textResults += " {0:d} {1:d} {2:d}".format(nIterTotal, nStars0, nStars)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsX, rmsY)
                     textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
@@ -962,7 +964,7 @@ class SIPEstimator:
 
                 print(df_resids.loc[selection, ['resXi', 'resEta']].describe())
 
-                ax3[2,0].plot(xiRef, etaRef, '.', markersize=1, alpha=0.5, color='#fc8d62', zorder=0)
+                ax3[2,0].plot(xiRef, etaRef, '.', markersize=1, alpha=0.5, color='#fc8d62', zorder=0, rasterized=True)
 
                 sns.scatterplot(data=df_resids[selection], x='resXi', y='resEta', hue='weights', legend=False, ax=ax3[1, 1],
                                 s=markerSize3, rasterized=True)
@@ -981,7 +983,7 @@ class SIPEstimator:
                                 s=markerSize3, rasterized=True)
 
                 for jj, (chipNumber, chipColor) in enumerate(zip(self.chip_numbers, self.chip_colors)):
-                    ax3[2,0].plot(corners[jj][0], corners[jj][1], '-', color=chipColor)
+                    ax3[2, 0].plot(corners[jj][0], corners[jj][1], '-', color=chipColor)
 
                 originPixRef = corners[0][:, 0]
                 xAxisPixRef  = corners[0][:, 3]
@@ -1063,9 +1065,14 @@ class SIPEstimator:
             else:
                 print("P_ORDER = {0:d}:".format(pOrder), "Skipping analysis because final table exists already!")
         else:
-            print(
-                "NOT ENOUGH GOOD-QUALITY REFERENCE STARS IN THE PLATE CATALOGUE. N_REF_STARS = {0} (MININUM {1:d} ON ALL CHIPS)".format(
-                    nGoodData, self.min_n_refstar))
+            if np.any(nGoodData <= self.min_n_refstar):
+                print(
+                    "NOT ENOUGH GOOD-QUALITY REFERENCE STARS IN THE PLATE CATALOGUE. N_REF_STARS = {0} (MININUM {1:d} ON ALL CHIPS)".format(
+                        nGoodData, self.min_n_refstar))
+            if np.any(refStarRatios <= self.min_refstar_ratio):
+                print(
+                    "REFERENCE STAR RATIO TOO-LOW COMPARED TO DETECTED STARS IN THE PLATE CATALOGUE. REF_STAR_RATIO = {0} (MINIMUM {1:0.3f} ON ALL CHIPS".format(
+                        refStarRatios, self.min_refstar_ratio))
 
         hduList.close()
 
@@ -1111,7 +1118,7 @@ class SIPEstimator:
 
         hst1pass.sort('w')
 
-        okayToProceed, nGoodData = self._getOkayToProceed(hst1pass)
+        okayToProceed, nGoodData, refStarRatios = self._getOkayToProceed(hst1pass)
 
         print("OKAY TO PROCEED:", okayToProceed)
 
@@ -1454,24 +1461,27 @@ class SIPEstimator:
 
         okays = np.zeros(self.chip_numbers.size, dtype='bool')
         nGoodData = np.zeros(self.chip_numbers.size, dtype=int)
+        refStarRatios = np.zeros(self.chip_numbers.size, dtype=float)
         for jj, chip in enumerate(self.chip_numbers):
-            selection = (catalogue['k'] == chip) & (catalogue['refCatIndex'] >= 0) & (catalogue['q'] > 0) & (
-                    catalogue['q'] <= self.qMax) & (~np.isnan(catalogue['nAppearances'])) & (
-                                catalogue['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
-                                matchRes <= self.max_pix_tol)
+            selectionStar    = ((catalogue['k'] == chip) & (catalogue['q'] > 0) & (catalogue['q'] <= self.qMax))
+            selectionRefStar = (selectionStar & (catalogue['refCatIndex'] >= 0) & (~np.isnan(catalogue['nAppearances'])) &
+                                (catalogue['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) &
+                                (matchRes <= self.max_pix_tol))
 
-            nGoodData[jj] = len(catalogue[selection])
+            nGoodData[jj] = len(catalogue[selectionRefStar])
+            refStarRatios[jj] = float(nGoodData[jj]) / float(len(catalogue[selectionStar]))
 
-            if (nGoodData[jj] > self.min_n_refstar):
+            if (nGoodData[jj] > self.min_n_refstar) and (refStarRatios[jj] > self.min_refstar_ratio):
                 okays[jj] = True
 
-            print(self.chip_labels[jj], "N_STARS =",
-                  nGoodData[jj], "OKAY:", okays[jj])
+            print(self.chip_labels[jj], "N_STARS = {}".format(nGoodData[jj]),
+                  "REF_STAR_RATIO = {:0.3f}".format(refStarRatios[jj]), "OKAY:", okays[jj])
 
-        del selection
+        del selectionStar
+        del selectionRefStar
         gc.collect()
 
-        return np.prod(okays, dtype='bool'), nGoodData
+        return np.prod(okays, dtype='bool'), nGoodData, refStarRatios[jj]
 
     def _getCDMatrix(self, xiInt, etaInt, xiRef, etaRef, weights=None, pOrder=1, scalerX=1.0, scalerY=1.0):
         ## Select only stars with finite values. No NaNs.
@@ -1522,10 +1532,10 @@ class SIPEstimator:
 class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
                  detectorName='WFC', qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0,
-                 min_n_refstar_ratio=0.6, max_pos_targs=0.0, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
+                 min_refstar_ratio=0.6, max_pos_targs=0.0, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
                  cross_match=True):
         super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
-                       min_n_refstar=min_n_refstar,
+                       min_n_refstar=min_n_refstar, min_refstar_ratio=min_refstar_ratio,
                        make_lithographic_and_filter_mask_corrections=make_lithographic_and_filter_mask_corrections,
                        cross_match=cross_match, individualZP=individualZP)
         self.pOrderIndiv = pOrderIndiv ## Maximum polynomial order that are inferred individually for each image
@@ -1935,7 +1945,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
             print("N_PARS_K = {0:d} (K_ORDER = {1:d}, N_KNOTS = {2:d})".format(self.nParsK, self.kOrder, self.nKnots))
 
-            N_ITER_OUTER = 10
+            N_ITER_OUTER = 20
             N_ITER_INNER = 100
 
             markerSize = 0.1
@@ -2261,7 +2271,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         ## At the last iteration, re-calculate the shift and rolls
                         ## if ((iteration2+1) == (N_ITER_INNER)):
-                        if ((weightSumDiff < 1.e-12) or (iteration2 + 1) == (N_ITER_INNER)):
+                        if ((weightSumDiff < 1.e-13) or (iteration2 + 1) == (N_ITER_INNER)):
                             ## Find the shift and rotation of the reference coordinates
                             ## using the new zero-th order coefficients and rotation angle
                             end_A = self.nImages * self.nParsIndiv_A[jjj]
@@ -2298,17 +2308,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                                     thisCoeffsB[ppp] = self.XtAll @ coeffsB[start:end]
 
-                            '''
-                            print("A1:")
-                            print(thisCoeffsA[0])
-                            print("B1:")
-                            print(thisCoeffsB[0])
-                            print("A3:")
-                            print(thisCoeffsA[1])
-                            print("B3:")
-                            print(thisCoeffsB[1])
-                            ''';
-
                             dxs.append(thisCoeffsA[0])
                             dys.append(thisCoeffsB[0])
                             rolls.append(-np.arctan(thisCoeffsA[1] / thisCoeffsB[1]))
@@ -2335,6 +2334,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                     if (not (self.individualZP or (chip == 2))):
                         break
+
+                if (self.individualZP or (chip == 2)):
+                    self._writeLinearTransform(dxs, dys, rolls, plateID, chip, outDir)
 
                 if makePlots:
                     pp1.close()
@@ -2393,7 +2395,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                     if (self.tMin <= t_acs.decimalyear <= self.tMax):
                         print(i, hst1passFile)
 
-                        rootname = hduList[0].header['ROOTNAME']
+                        rootname   = hduList[0].header['ROOTNAME']
+                        filterName = hduList[0].header['FILTER1']
+                        if ('clear' in filterName.lower()):
+                            filterName = hduList[0].header['FILTER2']
 
                         dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
 
@@ -2466,6 +2471,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 hst1pass['weights'][selection] = stat.wdecay(
                                     stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
 
+                        corners = []
+
                         textResults = ""
                         for jjj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
                                                                          self.header_numbers,
@@ -2499,6 +2506,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             XC = hst1pass['X'][selection] - self.X0
                             YC = hst1pass['Y'][selection] - self.Y0[jjj]
 
+                            XCorners = np.array([0.5, 0.5, naxis1 + 0.5, naxis1 + 0.5, 0.5])
+                            YCorners = np.array([0.5, naxis2 + 0.5, naxis2 + 0.5, 0.5, 0.5])
+
                             if self.make_lithographic_and_filter_mask_corrections:
                                 dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj],
                                                                              hst1pass['X'][selection].value,
@@ -2514,8 +2524,25 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 XC -= (dcorr[:, 2] - fcorr[:, 2])
                                 YC -= (dcorr[:, 3] - fcorr[:, 3])
 
+                                ## Repeat for the corners
+                                dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj], XCorners, YCorners,
+                                                                             self.XRef * 2, self.YRef * 2)).T
+                                fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jjj], XCorners, YCorners,
+                                                                             self.XRef * 2, self.YRef * 2)).T
+
+                                ## Apply the lithographic mask correction
+                                XCorners -= (dcorr[:, 2] - fcorr[:, 2])
+                                YCorners -= (dcorr[:, 3] - fcorr[:, 3])
+
+                            ## Apply the zero points to the corner points
+                            XCorners -= self.X0
+                            YCorners -= self.Y0[0]
+
                             X, scalerArray = sip.buildModel(XC, YC, self.pOrder,
                                                             scalerX=self.scalerX, scalerY=self.scalerY)
+
+                            XXCorners, _ = sip.buildModel(XCorners, YCorners, self.pOrder, scalerX=self.scalerX,
+                                                          scalerY=self.scalerY)
 
                             thisCoeffsA = np.zeros((self.nParsSIP, 1), dtype=float)
                             thisCoeffsB = np.zeros_like(thisCoeffsA)
@@ -2534,6 +2561,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             xPred = np.matmul(X * scalerArray, thisCoeffsA).flatten()
                             yPred = np.matmul(X * scalerArray, thisCoeffsB).flatten()
+
+                            xCorners = np.matmul(XXCorners * scalerArray, thisCoeffsA).flatten()
+                            yCorners = np.matmul(XXCorners * scalerArray, thisCoeffsB).flatten()
 
                             hst1pass['xPred'][selection] = xPred
                             hst1pass['yPred'][selection] = yPred
@@ -2565,31 +2595,17 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             CDMatrix = np.full((2, 3), np.nan)
 
                             if (selection[selection].size > 10):
+                                XCorr = hst1pass['xPred'][selection].value
+                                YCorr = hst1pass['yPred'][selection].value
+
                                 for iteration3 in range(N_ITER_CD):
-                                    CDMatrix = self._getCDMatrix(hst1pass['xPred'][selection].value,
-                                                                 hst1pass['yPred'][selection].value,
-                                                                 hst1pass['xiRef'][selection].value,
-                                                                 hst1pass['etaRef'][selection].value,
-                                                                 weights=hst1pass['weights'][selection].value)
-
-                                    selectionChip = hst1pass['k'] == chip
-
-                                    H, _ = sip.buildModel(hst1pass['xPred'][selectionChip].value,
-                                                          hst1pass['yPred'][selectionChip].value,
-                                                          1)
-
-                                    ## Calculate the normal coordinates Xi, Eta and assign them to the table
-                                    hst1pass['xi'][selectionChip]  = H @ CDMatrix[0]
-                                    hst1pass['eta'][selectionChip] = H @ CDMatrix[1]
-
-                                    '''
-                                    ## Calculate the normal coordinates relative to the pqr triad centered on the current CRVAL1,2
-                                    self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef, pqr0Im)
+                                    self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef,
+                                                                             pqr0Im)
 
                                     ## The reference coordinates used for regression of the CD matrix is relative to the current
                                     ## CRVAL1, CRVAL2 coordinates
-                                    xiRef  = (self.refCat['xi'][refStarIdx].value  * u.arcsec).to(u.deg) / vaFactor
-                                    etaRef = (self.refCat['eta'][refStarIdx].value * u.arcsec).to(u.deg) / vaFactor
+                                    xiRef  = (self.refCat.iloc[refStarIdx]['xi'].values  * u.arcsec).to(u.deg) / vaFactor
+                                    etaRef = (self.refCat.iloc[refStarIdx]['eta'].values * u.arcsec).to(u.deg) / vaFactor
 
                                     ## Store the reference coordinates back in pixel scale
                                     hst1pass['xiRef'][selection] = xiRef.to_value(
@@ -2606,7 +2622,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                                     ## Replace the CRVAL1, CRVAL2 coordinates using the constants of the CD Matrix
                                     c0Im = coords.getCelestialCoordinatesFromNormalCoordinates(CDMatrix[0, 0] * u.deg,
-                                                                                               CDMatrix[1, 0] * u.deg, c0Im,
+                                                                                               CDMatrix[1, 0] * u.deg,
+                                                                                               c0Im,
                                                                                                frame='icrs')
 
                                     ## Replace the triad pqr_0 using the new value of CRVAL1, CRVAL2
@@ -2624,7 +2641,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                             ((H @ CDMatrix[0]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
                                     hst1pass['eta'][selectionChip] = (
                                             ((H @ CDMatrix[1]) * u.deg) / acsconstants.ACS_PLATESCALE).to_value(u.pix)
-                                    ''';
 
                                     ## Calculate the residuals
                                     hst1pass['resXi'][selection] = (
@@ -2652,29 +2668,42 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                                                                   np.linalg.inv(
                                                                                                                       cov)))
 
+                                ## Build the transformation model for the corners
+                                HCorners, _ = sip.buildModel(xCorners, yCorners, 1)
+
+                                thisCorner = np.vstack([(((HCorners @ CDMatrix[0]) * u.deg) /
+                                                         acsconstants.ACS_PLATESCALE).to_value(u.pix),
+                                                        (((HCorners @ CDMatrix[1]) * u.deg) /
+                                                         acsconstants.ACS_PLATESCALE).to_value(u.pix)])
+
                                 alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
 
-                            '''
-                            xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
+                                xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
 
-                            xi0  = float(self.wcsRef.to_header()['CRPIX1']) - xi0[0]
-                            eta0 = eta0[0] - float(self.wcsRef.to_header()['CRPIX2'])
+                                xi0  = float(self.wcsRef.to_header()['CRPIX1']) - xi0[0]
+                                eta0 = eta0[0] - float(self.wcsRef.to_header()['CRPIX2'])
 
-                            selection = (hst1pass['k'] == chip)
+                                selection = (hst1pass['k'] == chip)
 
-                            hst1pass['xi'][selection]  = hst1pass['xi'][selection]  + xi0
-                            hst1pass['eta'][selection] = hst1pass['eta'][selection] + eta0
+                                hst1pass['xi'][selection]  = hst1pass['xi'][selection] + xi0
+                                hst1pass['eta'][selection] = hst1pass['eta'][selection] + eta0
 
-                            hst1pass['xiRef'][selection]  = hst1pass['xiRef'][selection]  + xi0
-                            hst1pass['etaRef'][selection] = hst1pass['etaRef'][selection] + eta0
+                                hst1pass['xiRef'][selection]  = hst1pass['xiRef'][selection] + xi0
+                                hst1pass['etaRef'][selection] = hst1pass['etaRef'][selection] + eta0
+
+                                ## Re-center the corners
+                                thisCorner[0] += xi0
+                                thisCorner[1] += eta0
+
+                                corners.append(thisCorner)
 
                             ## Calculate the residuals
                             hst1pass['resXi'][selection] = (
                                     hst1pass['xi'][selection].value - hst1pass['xiRef'][selection].value)
                             hst1pass['resEta'][selection] = (
                                     hst1pass['eta'][selection].value - hst1pass['etaRef'][selection].value)
-                            ''';
 
+                            ## Calculate the residuals in the sky plane
                             rmsXi  = np.nan
                             rmsEta = np.nan
 
@@ -2688,10 +2717,26 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 rmsEta = np.sqrt(stat.getWeightedAverage(hst1pass['resEta'][selection].value ** 2,
                                                                          hst1pass['weights'][selection].value))
 
-                            textResults += "{0:s} {1:d} {2:.8f} {3:.6f} {4:.13f} {5:.12e} {6:0.2f} {7:f} {8:f}".format(
-                                baseImageFilename, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1,
-                                posTarg2)
+                            ## Do the same for residuals in the v2-v3 plane
+                            rmsX = np.nan
+                            rmsY = np.nan
+
+                            residual_selection = (np.isfinite(hst1pass['dx'][selection].value) &
+                                                  np.isfinite(hst1pass['dy'][selection].value) &
+                                                  np.isfinite(hst1pass['weights'][selection].value))
+
+                            if (np.sum(hst1pass['weights'][selection].value) > 0) and (
+                                    residual_selection[residual_selection].size > 0):
+                                rmsX = np.sqrt(stat.getWeightedAverage(hst1pass['dx'][selection].value ** 2,
+                                                                       hst1pass['weights'][selection].value))
+                                rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dy'][selection].value ** 2,
+                                                                       hst1pass['weights'][selection].value))
+
+                            textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
+                                rootname, filterName, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp,
+                                posTarg1, posTarg2)
                             textResults += " {0:d} {1:d} {2:d}".format(0, nStars0, nStars)
+                            textResults += " {0:0.6f} {1:0.6f}".format(rmsX, rmsY)
                             textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
                             textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
                             textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
@@ -2710,21 +2755,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         fitResultsText.append(textResults)
 
-                        ## Assign name for each sources in each chip. We first grab the xi, eta from the catalogue.
-                        '''
-                        xi  = (hst1pass['xi'] * u.pix)  * acsconstants.ACS_PLATESCALE
-                        eta = (hst1pass['eta'] * u.pix) * acsconstants.ACS_PLATESCALE
-
-                        ## Use the zero-point of the reference catalogue and declare a SkyCoord object from zero-point.
-                        c0 = SkyCoord(ra=self.alpha0, dec=self.delta0, frame='icrs')
-
-                        ## Find only sources with defined xi and eta. Don't worry if they're crap sources, we'll deal with them
-                        ## later in the next phase
-                        argsel = np.argwhere(~np.isnan(xi) & ~np.isnan(eta)).flatten()
-
-                        ## Calculate the equatorial coordinates and assign them to the table
-                        c = coords.getCelestialCoordinatesFromNormalCoordinates(xi[argsel], eta[argsel], c0, frame='icrs')
-                        ''';
                         argsel = np.argwhere(~np.isnan(hst1pass['xi']) & ~np.isnan(hst1pass['eta'])).flatten()
 
                         hst1pass['alpha'][argsel], hst1pass['delta'][argsel] = self.wcsRef.wcs_pix2world(
@@ -2808,12 +2838,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             xi0  = float(self.wcsRef.to_header()['CRPIX1'])
                             eta0 = float(self.wcsRef.to_header()['CRPIX2'])
 
-                            df_resids['xi']  = xi0 - df_resids['xi']
-                            df_resids['eta'] = df_resids['eta'] - eta0
+                            ## df_resids['xi']  = xi0 - df_resids['xi']
+                            ## df_resids['eta'] = df_resids['eta'] - eta0
+                            ## print(corners)
 
                             selection = (df_resids['refCatIndex'] >= 0) & df_resids['retained']
 
                             ## print(df_resids.loc[selection, ['resXi', 'resEta']].describe())
+                            ax3[2, 0].plot(xi0 - self.refCat['xt'], self.refCat['yt'] - eta0, '.', markersize=1,
+                                           alpha=0.5, color='#fc8d62', zorder=0, rasterized=True)
 
                             sns.scatterplot(data=df_resids[selection], x='resXi', y='resEta', hue='weights', legend=False,
                                             ax=ax3[1, 1],
@@ -2836,6 +2869,24 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             sns.scatterplot(data=df_resids[selection], x='resEta', y='eta', hue='weights', legend=False,
                                             ax=ax3[2, 2],
                                             s=markerSize3, rasterized=True)
+
+                            for jj, (chipNumber, chipColor) in enumerate(zip(self.chip_numbers, self.chip_colors)):
+                                ax3[2, 0].plot(corners[jj][0], corners[jj][1], '-', color=chipColor)
+
+                            originPixRef = corners[0][:, 0]
+                            xAxisPixRef = corners[0][:, 3]
+                            yAxisPixRef = corners[0][:, 1]
+
+                            xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
+                            yAxisPixRef = originPixRef + self.yAxisExtendFactor * (yAxisPixRef - originPixRef)
+
+                            ax3[2, 0].annotate(r'$x$', color='k', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
+                                               textcoords='data', ha='center', va='center',
+                                               arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
+
+                            ax3[2, 0].annotate(r'$y$', color='k', xy=originPixRef, xycoords='data', xytext=yAxisPixRef,
+                                               textcoords='data', ha='center', va='center',
+                                               arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
 
                             resLabels = ['res_xi [pix]', 'res_eta [pix]']
 
@@ -2951,17 +3002,22 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                 matchRes = np.sqrt(delX ** 2 + delY ** 2)
 
-                okays     = np.zeros(self.chip_numbers.size, dtype='bool')
-                nGoodData = np.zeros(self.chip_numbers.size, dtype=int)
+                okays         = np.zeros(self.chip_numbers.size, dtype='bool')
+                nGoodData     = np.zeros(self.chip_numbers.size, dtype=int)
+                refStarRatios = np.zeros(self.chip_numbers.size, dtype=float)
                 for jjj, chip in enumerate(self.chip_numbers):
-                    selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (hst1pass['q'] > 0) & (
-                            hst1pass['q'] <= Q_MAX) & (~np.isnan(hst1pass['nAppearances'])) & (
-                                        hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
-                                        matchRes <= self.max_pix_tol)
+                    selectionStar    = (hst1pass['k'] == chip) & (hst1pass['q'] > 0) & (hst1pass['q'] <= self.qMax)
+                    selectionRefStar = (selectionStar & (hst1pass['refCatIndex'] >= 0) &
+                                        (~np.isnan(hst1pass['nAppearances'])) &
+                                        (hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) &
+                                        (matchRes <= self.max_pix_tol))
 
-                    nGoodData[jjj] = len(hst1pass[selection])
+                    nStars         = len(hst1pass[selectionStar])
+                    nGoodData[jjj] = len(hst1pass[selectionRefStar])
 
-                    if (nGoodData[jjj] > self.min_n_refstar):
+                    refStarRatios[jjj] = float(nGoodData[jjj]) / float(nStars)
+
+                    if (nGoodData[jjj] > self.min_n_refstar) and (refStarRatios[jjj] > self.min_refstar_ratio):
                         okays[jjj] = True
 
                     '''
@@ -2969,7 +3025,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                           "N_STARS =", nGoodData[jjj], "OKAY:", okays[jjj])
                     ''';
 
-                del selection
+                del selectionStar
+                del selectionRefStar
                 gc.collect()
 
                 okayToProceed = np.prod(okays, dtype='bool')
@@ -3009,7 +3066,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         vaFactor = float(hdu.header['VAFACTOR'])
 
                         selection = (hst1pass['k'] == chip) & (hst1pass['refCatIndex'] >= 0) & (
-                                hst1pass['q'] > 0) & (hst1pass['q'] <= Q_MAX) & (
+                                hst1pass['q'] > 0) & (hst1pass['q'] <= self.qMax) & (
                                         ~np.isnan(hst1pass['nAppearances'])) & (
                                             hst1pass['nAppearances'] >= self.min_n_app) & (~np.isnan(matchRes)) & (
                                             matchRes <= self.max_pix_tol)
@@ -3125,6 +3182,27 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                                              etaRef[selection],
                                                                              sx, sy, roll)
         return xiRef, etaRef
+
+    def _writeLinearTransform(self, dxsAll, dysAll, rotationsAll, plateID, chip, outDir):
+        nIter = len(dxsAll)
+        for i in range(self.nOkay):
+            rootname = self.rootnames[i]
+
+            dxs   = []
+            dys   = []
+            rolls = []
+
+            for ii in range(nIter):
+                dxs.append(dxsAll[ii][i])
+                dys.append(dysAll[ii][i])
+                rolls.append(rotationsAll[ii][i])
+
+            df_linear = pd.DataFrame(data={'dx': dxs, 'dy': dys, 'rotation': rolls})
+
+            linearTransformFilename = "{0:s}/linearTransform_{1:s}_chip{2:d}_pOrderIndiv{3:d}_pOrder{4:d}_kOrder{5:d}.csv".format(
+                outDir, rootname, chip, self.pOrderIndiv, self.pOrder, self.kOrder)
+
+            df_linear.to_csv(linearTransformFilename, index=True)
 
     def _getColumnNamesForIndividualCoefficients(self, jjj):
         columns_indiv = ['rootname', 'tObs', 'chip']
