@@ -2471,12 +2471,14 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 hst1pass['weights'][selection] = stat.wdecay(
                                     stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
 
-                        corners = []
+                        corners      = []
+                        cornerColors = []
 
                         textResults = ""
-                        for jjj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
-                                                                         self.header_numbers,
-                                                                         self.chip_labels)):
+                        for jjj, (chip, ver, chipTitle, chipColor) in enumerate(zip(self.chip_numbers,
+                                                                                    self.header_numbers,
+                                                                                    self.chip_labels,
+                                                                                    self.chip_colors)):
                             startTime = time.time()
 
                             hdu = hduList['SCI', ver]
@@ -2696,6 +2698,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 thisCorner[1] += eta0
 
                                 corners.append(thisCorner)
+                                cornerColors.append(chipColor)
 
                             ## Calculate the residuals
                             hst1pass['resXi'][selection] = (
@@ -2870,23 +2873,24 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                             ax=ax3[2, 2],
                                             s=markerSize3, rasterized=True)
 
-                            for jj, (chipNumber, chipColor) in enumerate(zip(self.chip_numbers, self.chip_colors)):
-                                ax3[2, 0].plot(corners[jj][0], corners[jj][1], '-', color=chipColor)
+                            for cornerIndex, (corner, cornerColor) in enumerate(zip(corners, cornerColors)):
+                                ax3[2, 0].plot(corner[0], corner[1], '-', color=cornerColor)
 
-                            originPixRef = corners[0][:, 0]
-                            xAxisPixRef = corners[0][:, 3]
-                            yAxisPixRef = corners[0][:, 1]
+                                if (cornerIndex == 0):
+                                    originPixRef = corners[0][:, 0]
+                                    xAxisPixRef  = corners[0][:, 3]
+                                    yAxisPixRef  = corners[0][:, 1]
 
-                            xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
-                            yAxisPixRef = originPixRef + self.yAxisExtendFactor * (yAxisPixRef - originPixRef)
+                                    xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
+                                    yAxisPixRef = originPixRef + self.yAxisExtendFactor * (yAxisPixRef - originPixRef)
 
-                            ax3[2, 0].annotate(r'$x$', color='k', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
-                                               textcoords='data', ha='center', va='center',
-                                               arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
+                                    ax3[2, 0].annotate(r'$x$', color='k', xy=originPixRef, xycoords='data',
+                                                       xytext=xAxisPixRef, textcoords='data', ha='center', va='center',
+                                                       arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
 
-                            ax3[2, 0].annotate(r'$y$', color='k', xy=originPixRef, xycoords='data', xytext=yAxisPixRef,
-                                               textcoords='data', ha='center', va='center',
-                                               arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
+                                    ax3[2, 0].annotate(r'$y$', color='k', xy=originPixRef, xycoords='data',
+                                                       xytext=yAxisPixRef, textcoords='data', ha='center', va='center',
+                                                       arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
 
                             resLabels = ['res_xi [pix]', 'res_eta [pix]']
 
