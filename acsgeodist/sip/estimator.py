@@ -257,10 +257,6 @@ class SIPEstimator:
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
 
-
-                        ## print(dcorr)
-                        ## print(fcorr)
-
                         ## Apply the lithographic and filter mask correction
                         XC -= (dcorr[:, 2] - fcorr[:, 2])
                         YC -= (dcorr[:, 3] - fcorr[:, 3])
@@ -513,8 +509,6 @@ class SIPEstimator:
 
                                         axes2[axis1, axis2].set_xlim(xMin[axis2], xMax[axis2])
 
-                                ## print("Y_MIN:", yMin, "Y_MAX:", yMax)
-
                                 yMaxMin = np.nanmax(np.abs(np.array([yMin, yMax])))
 
                                 for axis1 in range(NAXIS):
@@ -576,10 +570,6 @@ class SIPEstimator:
                             if (self.detectorName == 'WFC') and (not (self.individualZP or (chip == 2))):
                                 break
 
-                    ## print("SHIFTS_X:", dxs)
-                    ## print("SHIFTS_Y:", dys)
-                    ## print("ROLLS:", rolls)
-
                     if (self.individualZP or (chip == 2)):
                         linearTransformFilename = "{0:s}/linearTransform_{1:s}_chip{2:d}_pOrder{3:d}.csv".format(outDir,
                                                                                                                  rootname,
@@ -623,10 +613,6 @@ class SIPEstimator:
                         fcorr = np.array(litho.interp_dtab_ftab_data(self.ftabs[jj], XCorners, YCorners,
                                                                      self.XRef * 2, self.YRef * 2)).T
 
-                        print(XCorners)
-                        print(YCorners)
-                        print(dcorr)
-                        print(fcorr)
                         ## Apply the lithographic mask correction
                         XCorners -= (dcorr[:, 2] - fcorr[:, 2])
                         YCorners -= (dcorr[:, 3] - fcorr[:, 3])
@@ -757,12 +743,6 @@ class SIPEstimator:
 
                     corners.append(thisCorner)
 
-                    print("CORNERS {}".format(chipTitle))
-                    print(xiCorners)
-                    print(etaCorners)
-                    print(HCorners)
-                    print(thisCorner.shape)
-
                     alpha0Im, delta0Im = c0Im.ra.value, c0Im.dec.value
 
                     xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
@@ -781,8 +761,6 @@ class SIPEstimator:
                     ## Re-center the corners
                     thisCorner[0] += xi0
                     thisCorner[1] += eta0
-
-                    print(repr(thisCorner))
 
                     ## Calculate the residuals
                     hst1pass['resXi'][selection] = (
@@ -943,6 +921,14 @@ class SIPEstimator:
 
                 print("Final table written to", outTableFilename)
 
+                ## Calculate the normal coordinates of ALL the reference stars. We calculate the normal coordinates
+                ## relative to the the normal triad of the reference catalogue's central point...
+                self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef, coords.getNormalTriad(c0))
+
+                ## ...then we extract the values and convert them to pixels
+                xiRef  = (self.refCat['xi'].values  * u.arcsec) / acsconstants.ACS_PLATESCALE.to(u.arcsec / u.pix)
+                etaRef = (self.refCat['eta'].values * u.arcsec) / acsconstants.ACS_PLATESCALE.to(u.arcsec / u.pix)
+
                 ## Plot the coordinates and their residuals on a common reference frame
                 xSize3 = 12
                 ySize3 = 1.0075 * xSize3
@@ -976,6 +962,8 @@ class SIPEstimator:
 
                 print(df_resids.loc[selection, ['resXi', 'resEta']].describe())
 
+                ax3[2,0].plot(xiRef, etaRef, '.', markersize=1, alpha=0.5, color='#fc8d62', zorder=0)
+
                 sns.scatterplot(data=df_resids[selection], x='resXi', y='resEta', hue='weights', legend=False, ax=ax3[1, 1],
                                 s=markerSize3, rasterized=True)
 
@@ -1002,13 +990,13 @@ class SIPEstimator:
                 xAxisPixRef = originPixRef + 1.2 * (xAxisPixRef - originPixRef)
                 yAxisPixRef = originPixRef + self.yAxisExtendFactor * (yAxisPixRef - originPixRef)
 
-                ax3[2,0].annotate(r'$x$', color='r', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
+                ax3[2,0].annotate(r'$x$', color='k', xy=originPixRef, xycoords='data', xytext=xAxisPixRef,
                                   textcoords='data', ha='center', va='center',
-                                  arrowprops=dict(arrowstyle="<-", color="r"), zorder=5)
+                                  arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
 
-                ax3[2,0].annotate(r'$y$', color='r', xy=originPixRef, xycoords='data', xytext=yAxisPixRef,
+                ax3[2,0].annotate(r'$y$', color='k', xy=originPixRef, xycoords='data', xytext=yAxisPixRef,
                                   textcoords='data', ha='center', va='center',
-                                  arrowprops=dict(arrowstyle="<-", color="r"), zorder=5)
+                                  arrowprops=dict(arrowstyle="<-", color="k"), zorder=5)
 
                 resLabels = ['res_xi [pix]', 'res_eta [pix]']
 
