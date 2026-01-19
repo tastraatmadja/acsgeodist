@@ -120,6 +120,8 @@ class SIPEstimator:
 
         if (not self.individualZP):
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
+        if (not self.orientat):
+            print("INITIAL SKY FRAME ROTATION IS USING PA_V3 AND NOT ORIENTAT")
 
         self.detectorName = detectorName
         self._setDetectorParameters()
