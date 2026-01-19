@@ -55,7 +55,7 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 
 class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
-                 min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True,
+                 min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, orientat_rotate=True,
                  make_lithographic_and_filter_mask_corrections=True, cross_match=True, min_ruwe=0.8, max_ruwe=1.2):
         self.individualZP      = individualZP
         self.refCat            = deepcopy(referenceCatalog)
@@ -68,6 +68,7 @@ class SIPEstimator:
         self.min_refstar_ratio = min_refstar_ratio
         self.alpha0            = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
         self.delta0            = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
+        self.orientat_rotate   = orientat_rotate
 
         self.make_lithographic_and_filter_mask_corrections = make_lithographic_and_filter_mask_corrections
 
@@ -112,15 +113,17 @@ class SIPEstimator:
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
 
     def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, addendumFilename=None, detectorName='WFC',
-                            outDir='.', individualZP=None, orientat=True, **kwargs):
+                            outDir='.', individualZP=None, orientat_rotate=None, **kwargs):
         if (addendumFilename is None):
             addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
         if (individualZP is not None):
             self.individualZP = individualZP
+        if (orientat_rotate is not None):
+            self.orientat_rotate = orientat_rotate
 
         if (not self.individualZP):
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
-        if (not self.orientat):
+        if (not self.orientat_rotate):
             print("INITIAL SKY FRAME ROTATION IS USING PA_V3 AND NOT ORIENTAT")
 
         self.detectorName = detectorName
@@ -291,7 +294,7 @@ class SIPEstimator:
 
                     ## Initialize shift and rotation
                     sx, sy = xi0[0], eta0[0]
-                    if orientat:
+                    if self.orientat_rotate:
                         roll = np.deg2rad(orientat)
                     else:
                         roll = np.deg2rad(pa_v3)

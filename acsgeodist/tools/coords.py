@@ -129,3 +129,30 @@ def calculateFootprintAndIfPointsAreInside(wcsIn, wcsOut, points=None, undistort
         in_footprint = None
 
     return np.vstack([corners_out, corners_out[0]]), in_footprint
+
+
+def getV2V3FromHeader(x, y, header, hduList):
+    ## Use the WCS to correct the pixel coordinates for distortion
+    w = wcs.WCS(header, fobj=hduList)
+
+    ## Get the x-y coordinates corrected for all distortion
+    xCorr, yCorr = w.pix2foc(x, y, 0)
+
+    ## Grab the reference x-y coordinates from the header
+    xRef = float(header['IDCXREF'])
+    yRef = float(header['IDCYREF'])
+
+    ## Grab the reference v2-v3 coordinates from the header
+    v2_0 = float(header['IDCV2REF'])
+    v3_0 = float(header['IDCV3REF'])
+
+    ## Grab the components of the matrix that transforms
+    ## the image coordinates into v2-v3 coordinates
+    ocx10 = float(header['OCX10'])
+    ocx11 = float(header['OCX11'])
+    ocy10 = float(header['OCY10'])
+    ocy11 = float(header['OCY11'])
+
+    dx = (xCorr - xRef)
+    dy = (yCorr - yRef)
+    return v2_0 + ocx11 * dx + ocx10 * dy, v3_0 - ocy11 * dx - ocy10 * dy
