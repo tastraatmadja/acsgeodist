@@ -179,7 +179,8 @@ class WCSAlignment:
 
                 plt.subplots_adjust(wspace=0.0, hspace=0.15)
 
-                handles = ()
+                nrs_patches = []
+                rs_patches  = []
 
                 phaseCorrelationFigures = []
 
@@ -530,8 +531,8 @@ class WCSAlignment:
 
                             apertures = CircularAperture(xyPos, r=20.0)
 
-                            nrs_patches = apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1,
-                                                         ax=axes0[jjj,0], label='Non-ref. star');
+                            this_nrs_patches = apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1,
+                                                              ax=axes0[jjj,0], label='Non-ref. star');
 
                             selection = (df_hst1pass['k'] == k) & df_hst1pass['hasRefCat']
 
@@ -540,10 +541,11 @@ class WCSAlignment:
 
                             apertures = CircularAperture(xyPos, r=20.0)
 
-                            rs_patches = apertures.plot(color=WCSAlignment.refStarColor, lw=1, alpha=1,
-                                                        ax=axes0[jjj,0], label='Ref. star');
+                            this_rs_patches = apertures.plot(color=WCSAlignment.refStarColor, lw=1, alpha=1,
+                                                             ax=axes0[jjj,0], label='Ref. star');
 
-                            handles = (rs_patches[0], nrs_patches[0])
+                            nrs_patches.extend(this_nrs_patches)
+                            rs_patches.extend(this_rs_patches)
 
                             del X
                             del reg
@@ -571,10 +573,10 @@ class WCSAlignment:
 
                             apertures = CircularAperture(xyPos, r=20.0)
 
-                            nrs_patches = apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1,
-                                                         ax=axes0[jjj, 0], label='Non-ref. star');
+                            this_nrs_patches = apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1,
+                                                              ax=axes0[jjj, 0], label='Non-ref. star');
 
-                            handles = (nrs_patches[0])
+                            nrs_patches.extend(this_nrs_patches)
 
                             del selection
                             del corrIm
@@ -600,10 +602,10 @@ class WCSAlignment:
 
                         apertures = CircularAperture(xyPos, r=20.0)
 
-                        nrs_patches = apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1,
-                                                     ax=axes0[jjj, 0], label='Non-ref. star');
+                        this_nrs_patches = apertures.plot(color=WCSAlignment.nonRefStarColor, lw=1, alpha=1,
+                                                          ax=axes0[jjj, 0], label='Non-ref. star');
 
-                        handles = (nrs_patches[0])
+                        nrs_patches.extend(this_nrs_patches)
 
                     elapsedTime = time.time() - startTime
                     print("CHIP DONE! Elapsed time:", convertTime(elapsedTime))
@@ -637,6 +639,12 @@ class WCSAlignment:
                 plt.close(fig=fig1)
 
                 del fig1
+
+                handles = []
+                if (len(nrs_patches) > 0):
+                    handles.append(nrs_patches[0])
+                if (len(rs_patches) > 0):
+                    handles.append(rs_patches[0])
 
                 if (len(handles) > 0):
                     axes0[0, 0].legend(loc=(0.0, 1.0), handles=handles, handlelength=1, handletextpad=0.5, frameon=False)

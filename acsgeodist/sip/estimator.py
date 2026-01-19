@@ -112,7 +112,7 @@ class SIPEstimator:
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
 
     def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, addendumFilename=None, detectorName='WFC',
-                            outDir='.', individualZP=None, **kwargs):
+                            outDir='.', individualZP=None, orientat=True, **kwargs):
         if (addendumFilename is None):
             addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
         if (individualZP is not None):
@@ -139,7 +139,7 @@ class SIPEstimator:
         tstring = hduList[0].header['DATE-OBS'] + 'T' + hduList[0].header['TIME-OBS']
         t_acs = Time(tstring, scale='ut1', format='fits')
 
-        pa_v3 = float(hduList[0].header['PA_V3'])
+        pa_v3 = Angle(float(hduList[0].header['PA_V3']) * u.deg).wrap_at('360d').value
 
         posTarg1 = float(hduList[0].header['POSTARG1'])
         posTarg2 = float(hduList[0].header['POSTARG2'])
@@ -288,7 +288,11 @@ class SIPEstimator:
                     xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
 
                     ## Initialize shift and rotation
-                    sx, sy, roll = xi0[0], eta0[0], np.deg2rad(orientat)
+                    sx, sy = xi0[0], eta0[0]
+                    if orientat:
+                        roll = np.deg2rad(orientat)
+                    else:
+                        roll = np.deg2rad(pa_v3)
 
                     ## Initialize the reference coordinates
                     xiRef  = deepcopy(xi.values)
