@@ -55,7 +55,7 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 
 class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
-                 min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, orientat_rotate=True,
+                 min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, rotate='orientat',
                  make_lithographic_and_filter_mask_corrections=True, cross_match=True, min_ruwe=0.8, max_ruwe=1.2):
         self.individualZP      = individualZP
         self.refCat            = deepcopy(referenceCatalog)
@@ -68,7 +68,9 @@ class SIPEstimator:
         self.min_refstar_ratio = min_refstar_ratio
         self.alpha0            = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
         self.delta0            = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
-        self.orientat_rotate   = orientat_rotate
+        self.rotate            = rotate
+        if (self.rotate is not None):
+            self.rotate = self.rotate.lower()
 
         self.make_lithographic_and_filter_mask_corrections = make_lithographic_and_filter_mask_corrections
 
@@ -113,18 +115,22 @@ class SIPEstimator:
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
 
     def processHST1PassFile(self, pOrder, hst1passFile, imageFilename, addendumFilename=None, detectorName='WFC',
-                            outDir='.', individualZP=None, orientat_rotate=None, **kwargs):
+                            outDir='.', individualZP=None, rotate='orientat', **kwargs):
         if (addendumFilename is None):
             addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
         if (individualZP is not None):
             self.individualZP = individualZP
-        if (orientat_rotate is not None):
-            self.orientat_rotate = orientat_rotate
+        if (rotate is not None):
+            self.rotate = rotate.lower()
+        else:
+            self.rotate = None
 
         if (not self.individualZP):
             print("INDIVIDUAL CHIP ZERO POINT = FALSE. ZERO POINT FOR CHIP 2 IS MEASURED RELATIVE TO CHIP 1.")
-        if (not self.orientat_rotate):
-            print("INITIAL SKY FRAME ROTATION IS USING PA_V3 AND NOT ORIENTAT")
+        if (self.orientat is not None):
+            print("INITIAL SKY FRAME ROTATION IS USING {}".format(self.rotate))
+        else:
+            print("NO INITIAL SKY FRAME ROTATION IS PERFORMED!")
 
         self.detectorName = detectorName
         self._setDetectorParameters()
@@ -294,10 +300,12 @@ class SIPEstimator:
 
                     ## Initialize shift and rotation
                     sx, sy = xi0[0], eta0[0]
-                    if self.orientat_rotate:
+                    if (self.rotate == 'orientat'):
                         roll = np.deg2rad(orientat)
-                    else:
+                    elif (self.rotate == 'pa_v3'):
                         roll = np.deg2rad(pa_v3)
+                    else:
+                        roll = 0.0
 
                     ## Initialize the reference coordinates
                     xiRef  = deepcopy(xi.values)
@@ -560,9 +568,13 @@ class SIPEstimator:
                                     ## Shift and rotate the reference coordinates using the new
                                     ## zero-th order coefficients and rotation angle
                                     sx, sy = coeffs[0], coeffs[1]
-                                    epsilon = np.arctan(coeffs[4] / coeffs[5])
 
-                                    roll = -epsilon
+                                    if (self.rotate is not None):
+                                        epsilon = np.arctan(coeffs[4] / coeffs[5])
+
+                                        roll = -epsilon
+                                    else:
+                                        roll = 0.0
 
                                     break
                                 else:
