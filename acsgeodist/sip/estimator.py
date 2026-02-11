@@ -659,9 +659,6 @@ class SIPEstimator:
                     xiPred  = np.matmul(X * scalerArray, coeffs[0::2])
                     etaPred = np.matmul(X * scalerArray, coeffs[1::2])
 
-                    xiCorners  = np.matmul(XXCorners * scalerArray, coeffs[0::2])
-                    etaCorners = np.matmul(XXCorners * scalerArray, coeffs[1::2])
-
                     hst1pass['xPred'][selection] = xiPred
                     hst1pass['yPred'][selection] = etaPred
                     hst1pass['xRef'][selection] = xiRef
@@ -684,6 +681,24 @@ class SIPEstimator:
                     pp2.close()
 
                     print("Residual XY-distribution plots saved to {0:s}".format(plotFilename2))
+
+                    ## We are now going to extract the A and B coefficients that we have solved and transform (rotate,
+                    ## shear, skew) them back into the detector frame reference. This is called the CX and CY
+                    ## coefficients, which perform the correction in the XY detector frame, rather than in the V2-V3
+                    ## focal plane frame.
+
+                    ## Extract the linear matrix that perform the affine transform from XY detector frame into V2-V3
+                    ## focal plane frame.
+                    lin_mat = np.array([[coeffs[2], coeffs[4]], [coeffs[3], coeffs[5]]])
+
+                    det_lin_mat = lin_mat[0, 0] * lin_mat[1, 1] - lin_mat[1, 0] * lin_mat[0, 1]
+
+                    inv_lin_mat = np.array(
+                        [[lin_mat[1, 1], -lin_mat[0, 1]], [-lin_mat[1, 0], lin_mat[0, 0]]]) / det_lin_mat
+
+
+                    xiCorners  = np.matmul(XXCorners * scalerArray, coeffs[0::2])
+                    etaCorners = np.matmul(XXCorners * scalerArray, coeffs[1::2])
 
                     ## Finally, we calculate the CD Matrix used to transform the intermediate world coordinate
                     ## We take the reference coordinate to be the CRVAL1,2 in the header and a create a SkyCoord object
