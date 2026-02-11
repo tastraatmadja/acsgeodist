@@ -864,6 +864,15 @@ class SIPEstimator:
                                                                                      CDMatrix[1, 1], CDMatrix[1, 2])
                     for coeff in coeffs:
                         textResults += " {0:0.12e}".format(coeff)
+
+                    ## Iterate over columns first, then rows
+                    for qqq in range(NAXIS):
+                        for ppp in range(NAXIS):
+                            textResults += " {0:0.12e}".format(inv_lin_mat[ppp,qqq])
+
+                    for p in range(3, CX.shape[0]):
+                        textResults += " {0:0.12e}".format(CX[p,0])
+                        textResults += " {0:0.12e}".format(CY[p,0])
                     textResults += "\n"
 
                     ## Repeat the selection process
