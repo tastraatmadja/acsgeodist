@@ -188,28 +188,33 @@ class SIPEstimator:
                 fig1, axes = plt.subplots(figsize=(xSize1, ySize1), nrows=nRows, ncols=nCols, rasterized=True,
                                           squeeze=False)
 
-                ## Save the old match residuals before it is wiped out with nans
+                ## Save the old match residuals before it is wiped out
                 delX = hst1pass['xPred'] - hst1pass['xRef']
                 delY = hst1pass['yPred'] - hst1pass['yRef']
 
                 matchRes = np.sqrt(delX ** 2 + delY ** 2)
 
+                ## Remove the xPred, yPred, xRef, and yRef columns
+                hst1pass.remove_columns(['xPred', 'yPred', 'xRef', 'yRef'])
+
                 ## Change the columns with default values
-                hst1pass['xPred']    = np.nan
-                hst1pass['yPred']    = np.nan
-                hst1pass['xRef']     = np.nan
-                hst1pass['yRef']     = np.nan
-                hst1pass['dx']       = np.nan
-                hst1pass['dy']       = np.nan
+                hst1pass['xCorr']    = np.nan ## SIP-corrected coordinates in the xy detector frame
+                hst1pass['yCorr']    = np.nan
+                hst1pass['uPred']    = np.nan ## SIP-corrected coordinates transformed into uv focal-plane frame
+                hst1pass['vPred']    = np.nan
+                hst1pass['uRef']     = np.nan ## Reference sky coordinates (``true'') but transformed into the uv frame
+                hst1pass['vRef']     = np.nan
+                hst1pass['du']       = np.nan ## Residuals between predicted and true uv-frame coordinates
+                hst1pass['dv']       = np.nan
                 hst1pass['retained'] = False
                 hst1pass['weights']  = 0.0  ## Final weights for all detected sources in the chip
-                hst1pass['xi']       = np.nan
+                hst1pass['xi']       = np.nan ## Predicted sky coordinates in gnomonic projection (i.e. normal projection)
                 hst1pass['eta']      = np.nan
-                hst1pass['xiRef']    = np.nan
+                hst1pass['xiRef']    = np.nan ## Reference sky coordinates (``true'') in gnomonic projection
                 hst1pass['etaRef']   = np.nan
-                hst1pass['resXi']    = np.nan
+                hst1pass['resXi']    = np.nan ## Residuals between predicted and true sky coordinates
                 hst1pass['resEta']   = np.nan
-                hst1pass['alpha']    = np.nan
+                hst1pass['alpha']    = np.nan ## Predicted sky coordinates in equatorial frame
                 hst1pass['delta']    = np.nan
                 hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
 
@@ -434,8 +439,8 @@ class SIPEstimator:
 
                                 ax.set_aspect('equal')
 
-                                ax.set_xlabel(r'$\Delta X$ [pix]')
-                                ax.set_ylabel(r'$\Delta Y$ [pix]')
+                                ax.set_xlabel(r'$\Delta U$ [pix]')
+                                ax.set_ylabel(r'$\Delta V$ [pix]')
 
                                 ax.xaxis.set_major_locator(ticker.AutoLocator())
                                 ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
@@ -465,7 +470,7 @@ class SIPEstimator:
                                                            rasterized=True)
 
                                 xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
-                                yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
+                                yLabels = [r'$\Delta U$ [pix]', r'$\Delta V$ [pix]']
 
                                 XY0 = np.array([self.X0, self.Y0[0]])
 
@@ -659,20 +664,20 @@ class SIPEstimator:
                     xiPred  = np.matmul(X * scalerArray, coeffs[0::2])
                     etaPred = np.matmul(X * scalerArray, coeffs[1::2])
 
-                    hst1pass['xPred'][selection] = xiPred
-                    hst1pass['yPred'][selection] = etaPred
-                    hst1pass['xRef'][selection] = xiRef
-                    hst1pass['yRef'][selection] = etaRef
-                    hst1pass['dx'][selection] = xiRef - xiPred
-                    hst1pass['dy'][selection] = etaRef - etaPred
+                    hst1pass['uPred'][selection] = xiPred
+                    hst1pass['vPred'][selection] = etaPred
+                    hst1pass['uRef'][selection] = xiRef
+                    hst1pass['vRef'][selection] = etaRef
+                    hst1pass['du'][selection] = xiRef - xiPred
+                    hst1pass['dv'][selection] = etaRef - etaPred
                     hst1pass['retained'][indices] = True
                     hst1pass['weights'][indices.flatten()] = weights.flatten()
 
                     ## Assign NaNs to values of non-reference stars
-                    hst1pass['xRef'][selection & ~hasRefStar] = np.nan
-                    hst1pass['yRef'][selection & ~hasRefStar] = np.nan
-                    hst1pass['dx'][selection & ~hasRefStar] = np.nan
-                    hst1pass['dy'][selection & ~hasRefStar] = np.nan
+                    hst1pass['uRef'][selection & ~hasRefStar] = np.nan
+                    hst1pass['vRef'][selection & ~hasRefStar] = np.nan
+                    hst1pass['du'][selection & ~hasRefStar] = np.nan
+                    hst1pass['dv'][selection & ~hasRefStar] = np.nan
 
                     pp1.close()
 
@@ -691,14 +696,27 @@ class SIPEstimator:
                     ## focal plane frame.
                     lin_mat = np.array([[coeffs[2], coeffs[4]], [coeffs[3], coeffs[5]]])
 
+                    ## Determinant of the linear matrix
                     det_lin_mat = lin_mat[0, 0] * lin_mat[1, 1] - lin_mat[1, 0] * lin_mat[0, 1]
 
+                    ## Inverse of the linear matrix
                     inv_lin_mat = np.array(
                         [[lin_mat[1, 1], -lin_mat[0, 1]], [-lin_mat[1, 0], lin_mat[0, 0]]]) / det_lin_mat
 
+                    CX = np.zeros((X.shape[1], 1))
+                    CY = np.zeros_like(CX)
 
-                    xiCorners  = np.matmul(XXCorners * scalerArray, coeffs[0::2])
-                    etaCorners = np.matmul(XXCorners * scalerArray, coeffs[1::2])
+                    for p in range(1, CX.shape[0]):
+                        pp = NAXIS * p
+                        CX[p], CY[p] = (inv_lin_mat @ np.array([[coeffs[pp]], [coeffs[pp + 1]]])).flatten()
+
+                    ## Now we calculate the SIP-corrected coordinates and store them in the table
+                    hst1pass['xCorr'][selection] = ((X * scalerArray) @ CX).flatten()
+                    hst1pass['yCorr'][selection] = ((X * scalerArray) @ CY).flatten()
+
+                    ## Do the same for the corners
+                    xiCorners  = ((XXCorners * scalerArray) @ CX).flatten()
+                    etaCorners = ((XXCorners * scalerArray) @ CY).flatten()
 
                     ## Finally, we calculate the CD Matrix used to transform the intermediate world coordinate
                     ## We take the reference coordinate to be the CRVAL1,2 in the header and a create a SkyCoord object
@@ -716,8 +734,8 @@ class SIPEstimator:
 
                     nStars = refStarIdx.size
 
-                    XCorr = hst1pass['xPred'][selection].value
-                    YCorr = hst1pass['yPred'][selection].value
+                    XCorr = hst1pass['xCorr'][selection].value
+                    YCorr = hst1pass['yCorr'][selection].value
 
                     for iteration3 in range(N_ITER_CD):
                         ## Calculate the normal coordinates relative to the pqr triad centered on the current CRVAL1,2
@@ -750,8 +768,8 @@ class SIPEstimator:
                         ## Apply the CD Matrix to all sources in the chip, in order to obtain the new normal coordinates
                         selectionChip = hst1pass['k'] == k
 
-                        H, _ = sip.buildModel(hst1pass['xPred'][selectionChip].value,
-                                              hst1pass['yPred'][selectionChip].value,
+                        H, _ = sip.buildModel(hst1pass['xCorr'][selectionChip].value,
+                                              hst1pass['yCorr'][selectionChip].value,
                                               1)
 
                         ## Calculate the normal coordinates Xi, Eta and assign them to the table
@@ -824,15 +842,15 @@ class SIPEstimator:
                     rmsX = np.nan
                     rmsY = np.nan
 
-                    residual_selection = (np.isfinite(hst1pass['dx'][selection].value) &
-                                          np.isfinite(hst1pass['dy'][selection].value) &
+                    residual_selection = (np.isfinite(hst1pass['du'][selection].value) &
+                                          np.isfinite(hst1pass['dv'][selection].value) &
                                           np.isfinite(hst1pass['weights'][selection].value))
 
                     if (np.sum(hst1pass['weights'][selection].value) > 0) and (
                             residual_selection[residual_selection].size > 0):
-                        rmsX = np.sqrt(stat.getWeightedAverage(hst1pass['dx'][selection].value ** 2,
+                        rmsX = np.sqrt(stat.getWeightedAverage(hst1pass['du'][selection].value ** 2,
                                                                hst1pass['weights'][selection].value))
-                        rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dy'][selection].value ** 2,
+                        rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dv'][selection].value ** 2,
                                                                hst1pass['weights'][selection].value))
 
                     textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
@@ -2188,8 +2206,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                                 ax.set_aspect('equal')
 
-                                ax.set_xlabel(r'$\Delta X$ [pix]')
-                                ax.set_ylabel(r'$\Delta Y$ [pix]')
+                                ax.set_xlabel(r'$\Delta U$ [pix]')
+                                ax.set_ylabel(r'$\Delta V$ [pix]')
 
                                 ax.xaxis.set_major_locator(ticker.AutoLocator())
                                 ax.xaxis.set_minor_locator(ticker.AutoMinorLocator())
@@ -2211,7 +2229,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                            rasterized=True)
 
                                 xLabels = [r'$X_{\rm raw}$ [pix]', r'$Y_{\rm raw}$ [pix]']
-                                yLabels = [r'$\Delta X$ [pix]', r'$\Delta Y$ [pix]']
+                                yLabels = [r'$\Delta U$ [pix]', r'$\Delta V$ [pix]']
 
                                 XY0 = np.array([self.X0, self.Y0[0]])
 
