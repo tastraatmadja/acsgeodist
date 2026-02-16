@@ -168,12 +168,11 @@ class SIPEstimator:
 
         print("OKAY TO PROCEED:", okayToProceed)
 
-        textResults = None
+        self.data = None
 
         if okayToProceed:
             ## Final table filename
             outTableFilename = '{0:s}/{1:s}_hst1pass_stand_pOrder{2:d}_resids.csv'.format(outDir, rootname, pOrder)
-
 
             if (not os.path.exists(outTableFilename)):
                 startTime0 = time.time()
@@ -223,7 +222,8 @@ class SIPEstimator:
 
                 corners = []
 
-                textResults = ""
+                self.data = self._getOutputDataFrame(pOrder)
+
                 for jj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
                                                                 self.header_numbers,
                                                                 self.chip_labels)):
@@ -694,21 +694,7 @@ class SIPEstimator:
 
                     ## Extract the linear matrix that perform the affine transform from XY detector frame into V2-V3
                     ## focal plane frame.
-                    lin_mat = np.array([[coeffs[2], coeffs[4]], [coeffs[3], coeffs[5]]])
-
-                    ## Determinant of the linear matrix
-                    det_lin_mat = lin_mat[0, 0] * lin_mat[1, 1] - lin_mat[1, 0] * lin_mat[0, 1]
-
-                    ## Inverse of the linear matrix
-                    inv_lin_mat = np.array(
-                        [[lin_mat[1, 1], -lin_mat[0, 1]], [-lin_mat[1, 0], lin_mat[0, 0]]]) / det_lin_mat
-
-                    CX = np.zeros((X.shape[1], 1))
-                    CY = np.zeros_like(CX)
-
-                    for p in range(1, CX.shape[0]):
-                        pp = NAXIS * p
-                        CX[p], CY[p] = (inv_lin_mat @ np.array([[coeffs[pp]], [coeffs[pp + 1]]])).flatten()
+                    CX, CY, R = sip.getCXCYCoeffsFromABCoeffs(coeffs[0::2], coeffs[1::2])
 
                     ## Now we calculate the SIP-corrected coordinates and store them in the table
                     hst1pass['xCorr'][selection] = ((X * scalerArray) @ CX).flatten()
@@ -853,27 +839,10 @@ class SIPEstimator:
                         rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dv'][selection].value ** 2,
                                                                hst1pass['weights'][selection].value))
 
-                    textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
-                        rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp, posTarg1,
-                        posTarg2)
-                    textResults += " {0:d} {1:d} {2:d}".format(nIterTotal, nStars0, nStars)
-                    textResults += " {0:0.6f} {1:0.6f}".format(rmsX, rmsY)
-                    textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
-                    textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
-                    textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
-                                                                                     CDMatrix[1, 1], CDMatrix[1, 2])
-                    for coeff in coeffs:
-                        textResults += " {0:0.12e}".format(coeff)
-
-                    ## Iterate over columns first, then rows
-                    for qqq in range(NAXIS):
-                        for ppp in range(NAXIS):
-                            textResults += " {0:0.12e}".format(inv_lin_mat[ppp,qqq])
-
-                    for p in range(3, CX.shape[0]):
-                        textResults += " {0:0.12e}".format(CX[p,0])
-                        textResults += " {0:0.12e}".format(CY[p,0])
-                    textResults += "\n"
+                    self._writeData(rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp,
+                                    posTarg1, posTarg2, nIterTotal, nStars0, nStars, rmsX, rmsY, rmsXi, rmsEta,
+                                    alpha0Im, delta0Im, CDMatrix, coeffs[0::2], coeffs[1::2],
+                                    CX.flatten(), CY.flatten(), R)
 
                     ## Repeat the selection process
                     selection = (hst1pass['k'] == k) & (hst1pass['refCatID'] >= 0) & (hst1pass['q'] > 0) & (
@@ -922,11 +891,9 @@ class SIPEstimator:
                     elapsedTime = time.time() - startTime
                     print("FITTING DONE FOR {0:s}.".format(chipTitle), "Elapsed time:", convertTime(elapsedTime))
 
-                fitResultsFilename = '{0:s}/{1:s}_fitResults_pOrder{2:d}.txt'.format(outDir, rootname, pOrder)
+                fitResultsFilename = '{0:s}/{1:s}_fitResults_pOrder{2:d}.csv'.format(outDir, rootname, pOrder)
 
-                f = open(fitResultsFilename, 'w')
-                f.write(textResults)
-                f.close()
+                pd.DataFrame(data=self.data).to_csv(fitResultsFilename, index=False, mode='w')
 
                 print("Fit results written to", fitResultsFilename)
 
@@ -1148,7 +1115,10 @@ class SIPEstimator:
         gc.collect()
         ## print('Counts:', gc.get_count())
 
-        return textResults
+        if self.data is not None:
+            return pd.DataFrame(data=self.data)
+        else:
+            return None
 
     def crossValidateHST1PassFile(self, pOrder, nFolds, hst1passFile, imageFilename, addendumFilename=None,
                                   detectorName='WFC', outDir='.', **kwargs):
@@ -1225,6 +1195,7 @@ class SIPEstimator:
 
                 CVResiduals = []
 
+                textResults = "";
                 for jj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
                                                                 self.header_numbers,
                                                                 self.chip_labels)):
@@ -1481,6 +1452,74 @@ class SIPEstimator:
                                                                                                          convertTime(elapsedTime0)))
 
             return outTableFilename
+
+    def _getOutputDataFrame(self, pOrder):
+        n = pOrder + 1
+
+        nParsAxis = sip.getUpperTriangularMatrixNumberOfElements(n)
+
+        columns = ['rootname', 'filter', 'chip', 'time', 'pa_v3', 'orientat', 'vaFactor', 'tExp', 'posTarg1',
+                   'posTarg2', 'nIterTotal', 'nStars0', 'nStars1', 'rmsX', 'rmsY', 'rmsXi', 'rmsEta', 'crval1',
+                   'crval2', 'cd11', 'cd12', 'cd21', 'cd22']
+        for ppp in range(nParsAxis):
+            for axis in range(NAXIS):
+                coeffName = '{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], ppp + 1)
+
+                columns.append(coeffName)
+
+        for ppp in range(1, nParsAxis):
+            i, j = sip.getCantorPair(ppp)
+            for axis in range(NAXIS):
+                coeffName = 'C{0:s}{1:d}{2:d}'.format(acsconstants.AXIS_NAMES[axis].replace(r'$', ''), i, j)
+
+                columns.append(coeffName)
+
+        columns.append('zp')
+
+        return {column:[] for column in columns}
+
+    def _writeData(self, rootname, filterName, chip, tObs, pa_v3, orientat, vaFactor, tExp, posTarg1, posTarg2,
+                   nIterTotal, nStars0, nStars, rmsX, rmsY, rmsXi, rmsEta, alpha0Im, delta0Im, CDMatrix, A, B, CX, CY, R):
+        self.data['rootname'].append(rootname)
+        self.data['filter'].append(filterName)
+        self.data['chip'].append(chip)
+        self.data['time'].append(tObs)
+        self.data['pa_v3'].append(pa_v3)
+        self.data['orientat'].append(orientat)
+        self.data['vaFactor'].append(vaFactor)
+        self.data['tExp'].append(tExp)
+        self.data['posTarg1'].append(posTarg1)
+        self.data['posTarg2'].append(posTarg2)
+        self.data['nIterTotal'].append(0)
+        self.data['nStars0'].append(nStars0)
+        self.data['nStars1'].append(nStars)
+        self.data['rmsX'].append(rmsX)
+        self.data['rmsY'].append(rmsY)
+        self.data['rmsXi'].append(rmsXi)
+        self.data['rmsEta'].append(rmsEta)
+        self.data['crval1'].append(alpha0Im)
+        self.data['crval2'].append(delta0Im)
+        for ii in range(NAXIS):
+            for jj in range(NAXIS):
+                self.data['cd{}{}'.format(ii + 1, jj + 1)].append(CDMatrix[ii, jj + 1])
+
+        for ppp, (thisA, thisB), in enumerate(zip(A, B)):
+            self.data['A_{}'.format(ppp + 1)].append(thisA)
+            self.data['B_{}'.format(ppp + 1)].append(thisB)
+
+        for p in range(1, 3):
+            CX[p] = R[0, p - 1]
+            CY[p] = R[1, p - 1]
+
+        for ppp in range(1, CX.size):
+            i, j = sip.getCantorPair(ppp)
+            self.data['CX{0:d}{1:d}'.format(i, j)].append(CX[ppp])
+            self.data['CY{0:d}{1:d}'.format(i, j)].append(CY[ppp])
+
+        if self.individualZP:
+            self.data['zp'].append('individualZP')
+        else:
+            self.data['zp'].append('singleZP')
 
     def _setDetectorParameters(self):
         if (self.detectorName == 'WFC'):
@@ -2430,7 +2469,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 print("Residual table written to {0:s}".format(outTableFilename))
 
         print("APPLYING TIME-DEPENDENT COEFFICIENTS TO SELECTED HST1PASS FILES...")
-        fitResultsFilename = '{0:s}/fitResults_pOrder{1:d}_kOrder{2:d}.txt'.format(outDir, self.pOrder, self.kOrder)
+        fitResultsFilename = '{0:s}/fitResults_pOrder{1:d}_kOrder{2:d}.csv'.format(outDir, self.pOrder, self.kOrder)
+
+        self.data = self._getOutputDataFrame(self.pOrder)
 
         if (not os.path.exists(fitResultsFilename)):
             ## Read the output table from the time-dependent coefficient fitting
@@ -2441,8 +2482,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                       ignore_index=True)
             df_spline_coeffs = pd.concat(
                 [pd.read_csv(modelCoeffsFilename) for modelCoeffsFilename in modelCoeffsFilenames], ignore_index=True)
-
-            fitResultsText = []
 
             for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
                 addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
@@ -2537,7 +2576,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         corners      = []
                         cornerColors = []
 
-                        textResults = ""
+                        self.data = self._getOutputColumns(pOrder)
+
                         for jjj, (chip, ver, chipTitle, chipColor) in enumerate(zip(self.chip_numbers,
                                                                                     self.header_numbers,
                                                                                     self.chip_labels,
@@ -2624,6 +2664,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             for p in self.splineParsIndices_B[jjj]:
                                 thisCoeffsB[p, 0] = Xt @ self._getSplineCoeffs(p, 1, chip, df_spline_coeffs)
 
+                            CX, CY, R = sip.getCXCYCoeffsFromABCoeffs(thisCoeffsA, thisCoeffsB)
+
                             xPred = np.matmul(X * scalerArray, thisCoeffsA).flatten()
                             yPred = np.matmul(X * scalerArray, thisCoeffsB).flatten()
 
@@ -2634,6 +2676,9 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             hst1pass['yPred'][selection] = yPred
                             hst1pass['dx'][selection]    = hst1pass['xRef'][selection] - xPred
                             hst1pass['dy'][selection]    = hst1pass['yRef'][selection] - yPred
+
+                            hst1pass['xCorr'][selection] = np.matmul(X * scalerArray, CX).flatten()
+                            hst1pass['yCorr'][selection] = np.matmul(X * scalerArray, CY).flatten()
 
                             alpha0Im = float(hdu.header['CRVAL1'])
                             delta0Im = float(hdu.header['CRVAL2'])
@@ -2660,8 +2705,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             CDMatrix = np.full((2, 3), np.nan)
 
                             if (selection[selection].size > 10):
-                                XCorr = hst1pass['xPred'][selection].value
-                                YCorr = hst1pass['yPred'][selection].value
+                                XCorr = hst1pass['xCorr'][selection].value
+                                YCorr = hst1pass['yCorr'][selection].value
 
                                 for iteration3 in range(N_ITER_CD):
                                     self.refCat = self._getNormalCoordinates(self.refCat, 'xt', 'yt', self.wcsRef,
@@ -2798,20 +2843,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dy'][selection].value ** 2,
                                                                        hst1pass['weights'][selection].value))
 
-                            textResults += "{0:s} {1:s} {2:d} {3:.8f} {4:.6f} {5:.13f} {6:.12e} {7:0.2f} {8:f} {9:f}".format(
-                                rootname, filterName, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp,
-                                posTarg1, posTarg2)
-                            textResults += " {0:d} {1:d} {2:d}".format(0, nStars0, nStars)
-                            textResults += " {0:0.6f} {1:0.6f}".format(rmsX, rmsY)
-                            textResults += " {0:0.6f} {1:0.6f}".format(rmsXi, rmsEta)
-                            textResults += " {0:0.12f} {1:0.12f}".format(alpha0Im, delta0Im)
-                            textResults += " {0:0.12e} {1:0.12e} {2:0.12e} {3:0.12e}".format(CDMatrix[0, 1], CDMatrix[0, 2],
-                                                                                             CDMatrix[1, 1], CDMatrix[1, 2])
 
-                            for coeffA, coeffB in zip(thisCoeffsA.flatten(), thisCoeffsB.flatten()):
-                                textResults += " {0:0.12e}".format(coeffA)
-                                textResults += " {0:0.12e}".format(coeffB)
-                            textResults += "\n"
+                            self._writeData(rootname, filterName, chip, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp,
+                                            posTarg1, posTarg2, 0, nStars0, nStars, rmsX, rmsY, rmsXi, rmsEta,
+                                            alpha0Im, delta0Im, CDMatrix, thisCoeffsA.flatten(), thisCoeffsA.flatten(),
+                                            CX.flatten(), CY.flatten(), R)
 
                             ## print("RESIDUALS FOR {0:s}".format(chipTitle))
                             ## print(hst1pass.to_pandas().loc[selection, ['resXi', 'resEta']].describe())

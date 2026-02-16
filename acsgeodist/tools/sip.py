@@ -110,3 +110,29 @@ def getBothAxesIndices(indices_in, naxis=2):
         indices_out[axis::naxis] = naxis * indices_in + axis
 
     return indices_out
+
+def getCXCYCoeffsFromABCoeffs(A, B):
+    ## Extract the linear matrix that perform the affine transform from XY detector frame into V2-V3
+    ## focal plane frame.
+    lin_mat = np.array([[A[1], A[2]], [B[1], B[2]]])
+
+    ## Determinant of the linear matrix
+    det_lin_mat = lin_mat[0, 0] * lin_mat[1, 1] - lin_mat[1, 0] * lin_mat[0, 1]
+
+    ## Inverse of the linear matrix
+    inv_lin_mat = np.array(
+        [[lin_mat[1, 1], -lin_mat[0, 1]], [-lin_mat[1, 0], lin_mat[0, 0]]]) / det_lin_mat
+
+    CX = np.zeros((A.size, 1))
+    CY = np.zeros_like(CX)
+
+    '''
+    for p in range(1, 3):
+        CX[p] = inv_lin_mat[0, p - 1]
+        CY[p] = inv_lin_mat[1, p - 1]
+    ''';
+
+    for p in range(1, CX.shape[0]):
+        CX[p], CY[p] = (inv_lin_mat @ np.array([[A[p]], [B[p]]])).flatten()
+
+    return CX, CY, inv_lin_mat
