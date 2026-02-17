@@ -1195,7 +1195,6 @@ class SIPEstimator:
 
                 CVResiduals = []
 
-                textResults = "";
                 for jj, (chip, ver, chipTitle) in enumerate(zip(self.chip_numbers,
                                                                 self.header_numbers,
                                                                 self.chip_labels)):
@@ -2462,7 +2461,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                 outTable = QTable(
                     [xyRaw[:, 0], xyRaw[:, 1], xiPred, etaPred, xiRef, etaRef, residualsXi, residualsEta, weights, plateID,
                      indices, tObs, rootnames, np.full_like(rootnames, chip)], names=(
-                    'X', 'Y', 'xPred', 'yPred', 'xRef', 'yRef', 'dx', 'dy', 'weights', 'plateID', 'indices', 'tObs', 'rootname', 'chip'))
+                    'X', 'Y', 'uPred', 'vPred', 'uRef', 'vRef', 'du', 'dv', 'weights', 'plateID', 'indices', 'tObs', 'rootname', 'chip'))
 
                 outTable.write(outTableFilename, overwrite=True)
 
@@ -2470,8 +2469,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
         print("APPLYING TIME-DEPENDENT COEFFICIENTS TO SELECTED HST1PASS FILES...")
         fitResultsFilename = '{0:s}/fitResults_pOrder{1:d}_kOrder{2:d}.csv'.format(outDir, self.pOrder, self.kOrder)
-
-        self.data = self._getOutputDataFrame(self.pOrder)
 
         if (not os.path.exists(fitResultsFilename)):
             ## Read the output table from the time-dependent coefficient fitting
@@ -2482,6 +2479,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                       ignore_index=True)
             df_spline_coeffs = pd.concat(
                 [pd.read_csv(modelCoeffsFilename) for modelCoeffsFilename in modelCoeffsFilenames], ignore_index=True)
+
+            self.data = self._getOutputDataFrame(self.pOrder)
 
             for i, (hst1passFile, imageFilename) in enumerate(zip(hst1passFiles, imageFilenames)):
                 addendumFilename = hst1passFile.replace('.csv', '_addendum.csv')
@@ -2522,18 +2521,20 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                                  ascii.read(addendumFilename, format='csv')])
 
                         ## Add new columns and assign default values
-                        hst1pass['dx']       = np.nan
-                        hst1pass['dy']       = np.nan
+                        hst1pass['xCorr'] = np.nan  ## SIP-corrected coordinates in the xy detector frame
+                        hst1pass['yCorr'] = np.nan
+                        hst1pass['du'] = np.nan  ## Residuals between predicted and true uv-frame coordinates
+                        hst1pass['dv'] = np.nan
                         hst1pass['retained'] = False
-                        hst1pass['weights']  = 0.0  ## Final weights for all detected sources in the chip
-                        hst1pass['xi']       = np.nan
-                        hst1pass['eta']      = np.nan
-                        hst1pass['xiRef']    = np.nan
-                        hst1pass['etaRef']   = np.nan
-                        hst1pass['resXi']    = np.nan
-                        hst1pass['resEta']   = np.nan
-                        hst1pass['alpha']    = np.nan
-                        hst1pass['delta']    = np.nan
+                        hst1pass['weights'] = 0.0  ## Final weights for all detected sources in the chip
+                        hst1pass['xi'] = np.nan  ## Predicted sky coordinates in gnomonic projection (i.e. normal projection)
+                        hst1pass['eta'] = np.nan
+                        hst1pass['xiRef'] = np.nan  ## Reference sky coordinates (``true'') in gnomonic projection
+                        hst1pass['etaRef'] = np.nan
+                        hst1pass['resXi'] = np.nan  ## Residuals between predicted and true sky coordinates
+                        hst1pass['resEta'] = np.nan
+                        hst1pass['alpha'] = np.nan  ## Predicted sky coordinates in equatorial frame
+                        hst1pass['delta'] = np.nan
                         hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
 
                         resids_selection = resids['plateID'] == i
@@ -2543,13 +2544,13 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             ## This existing columns can be replaced with nans because we're going to use the
                             ## time-dependent model to calculate them, and we'll use the previously calculated
                             ## values
-                            hst1pass['xPred'] = np.nan
-                            hst1pass['yPred'] = np.nan
-                            hst1pass['xRef']  = np.nan
-                            hst1pass['yRef']  = np.nan
+                            hst1pass['uPred'] = np.nan  ## SIP-corrected coordinates transformed into uv focal-plane frame
+                            hst1pass['vPred'] = np.nan
+                            hst1pass['uRef']  = np.nan  ## Reference sky coordinates (``true'') but transformed into the uv frame
+                            hst1pass['vRef']  = np.nan
 
-                            hst1pass['xRef'][resids_indices]     = resids['xRef'][resids_selection]
-                            hst1pass['yRef'][resids_indices]     = resids['yRef'][resids_selection]
+                            hst1pass['uRef'][resids_indices]     = resids['uRef'][resids_selection]
+                            hst1pass['vRef'][resids_indices]     = resids['vRef'][resids_selection]
                             hst1pass['retained'][resids_indices] = True
                             hst1pass['weights'][resids_indices]  = resids['weights'][resids_selection]
                         else:
@@ -2558,12 +2559,12 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             if (selection[selection].size > 0):
                                 hst1pass['retained'][selection] = True
 
-                                hst1pass['dx'][selection] = hst1pass['xRef'][selection] - hst1pass['xPred'][selection]
-                                hst1pass['dy'][selection] = hst1pass['yRef'][selection] - hst1pass['yPred'][selection]
+                                hst1pass['du'][selection] = hst1pass['uRef'][selection] - hst1pass['uPred'][selection]
+                                hst1pass['dv'][selection] = hst1pass['vRef'][selection] - hst1pass['vPred'][selection]
 
                                 ## calculate the initial values of the weights
-                                residuals = np.vstack([hst1pass['dx'][selection].value,
-                                                       hst1pass['dy'][selection].value]).T
+                                residuals = np.vstack([hst1pass['du'][selection].value,
+                                                       hst1pass['dv'][selection].value]).T
 
                                 ## Use the weights to estimate the mean and covariance matrix of the residual distribution
                                 mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals,
@@ -2575,8 +2576,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                         corners      = []
                         cornerColors = []
-
-                        self.data = self._getOutputColumns(pOrder)
 
                         for jjj, (chip, ver, chipTitle, chipColor) in enumerate(zip(self.chip_numbers,
                                                                                     self.header_numbers,
@@ -2664,7 +2663,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             for p in self.splineParsIndices_B[jjj]:
                                 thisCoeffsB[p, 0] = Xt @ self._getSplineCoeffs(p, 1, chip, df_spline_coeffs)
 
-                            CX, CY, R = sip.getCXCYCoeffsFromABCoeffs(thisCoeffsA, thisCoeffsB)
+                            CX, CY, R = sip.getCXCYCoeffsFromABCoeffs(thisCoeffsA.flatten(), thisCoeffsB.flatten())
 
                             xPred = np.matmul(X * scalerArray, thisCoeffsA).flatten()
                             yPred = np.matmul(X * scalerArray, thisCoeffsB).flatten()
@@ -2672,10 +2671,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             xCorners = np.matmul(XXCorners * scalerArray, thisCoeffsA).flatten()
                             yCorners = np.matmul(XXCorners * scalerArray, thisCoeffsB).flatten()
 
-                            hst1pass['xPred'][selection] = xPred
-                            hst1pass['yPred'][selection] = yPred
-                            hst1pass['dx'][selection]    = hst1pass['xRef'][selection] - xPred
-                            hst1pass['dy'][selection]    = hst1pass['yRef'][selection] - yPred
+                            hst1pass['uPred'][selection] = xPred
+                            hst1pass['vPred'][selection] = yPred
+                            hst1pass['du'][selection]    = hst1pass['uRef'][selection] - xPred
+                            hst1pass['dv'][selection]    = hst1pass['vRef'][selection] - yPred
 
                             hst1pass['xCorr'][selection] = np.matmul(X * scalerArray, CX).flatten()
                             hst1pass['yCorr'][selection] = np.matmul(X * scalerArray, CY).flatten()
@@ -2832,15 +2831,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             rmsX = np.nan
                             rmsY = np.nan
 
-                            residual_selection = (np.isfinite(hst1pass['dx'][selection].value) &
-                                                  np.isfinite(hst1pass['dy'][selection].value) &
+                            residual_selection = (np.isfinite(hst1pass['du'][selection].value) &
+                                                  np.isfinite(hst1pass['dv'][selection].value) &
                                                   np.isfinite(hst1pass['weights'][selection].value))
 
                             if (np.sum(hst1pass['weights'][selection].value) > 0) and (
                                     residual_selection[residual_selection].size > 0):
-                                rmsX = np.sqrt(stat.getWeightedAverage(hst1pass['dx'][selection].value ** 2,
+                                rmsX = np.sqrt(stat.getWeightedAverage(hst1pass['du'][selection].value ** 2,
                                                                        hst1pass['weights'][selection].value))
-                                rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dy'][selection].value ** 2,
+                                rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dv'][selection].value ** 2,
                                                                        hst1pass['weights'][selection].value))
 
 
@@ -2854,8 +2853,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             elapsedTime = time.time() - startTime
                             print("FITTING DONE FOR {0:s},".format(chipTitle), "elapsed time:", convertTime(elapsedTime), end='. ')
-
-                        fitResultsText.append(textResults)
 
                         argsel = np.argwhere(~np.isnan(hst1pass['xi']) & ~np.isnan(hst1pass['eta'])).flatten()
 
@@ -3056,11 +3053,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             print()
 
-            f = open(fitResultsFilename, 'w')
-            for textResult in fitResultsText:
-                if textResult is not None:
-                    f.write(textResult)
-            f.close()
+            pd.DataFrame(data=self.data).to_csv(fitResultsFilename, index=False, mode='w')
+
             print("Fit results written to", fitResultsFilename)
 
         elapsedTime = time.time() - startTimeAll
