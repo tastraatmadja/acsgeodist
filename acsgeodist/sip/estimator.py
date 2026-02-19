@@ -2523,6 +2523,10 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         ## Add new columns and assign default values
                         hst1pass['xCorr'] = np.nan  ## SIP-corrected coordinates in the xy detector frame
                         hst1pass['yCorr'] = np.nan
+                        hst1pass['uPred'] = np.nan  ## SIP-corrected coordinates transformed into uv focal-plane frame
+                        hst1pass['vPred'] = np.nan
+                        hst1pass['uRef'] = np.nan  ## Reference sky coordinates (``true'') but transformed into the uv frame
+                        hst1pass['vRef'] = np.nan
                         hst1pass['du'] = np.nan  ## Residuals between predicted and true uv-frame coordinates
                         hst1pass['dv'] = np.nan
                         hst1pass['retained'] = False
@@ -2544,11 +2548,6 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             ## This existing columns can be replaced with nans because we're going to use the
                             ## time-dependent model to calculate them, and we'll use the previously calculated
                             ## values
-                            hst1pass['uPred'] = np.nan  ## SIP-corrected coordinates transformed into uv focal-plane frame
-                            hst1pass['vPred'] = np.nan
-                            hst1pass['uRef']  = np.nan  ## Reference sky coordinates (``true'') but transformed into the uv frame
-                            hst1pass['vRef']  = np.nan
-
                             hst1pass['uRef'][resids_indices]     = resids['uRef'][resids_selection]
                             hst1pass['vRef'][resids_indices]     = resids['vRef'][resids_selection]
                             hst1pass['retained'][resids_indices] = True
