@@ -50,7 +50,7 @@ def getNormalCoordinates(c, pqr0):
 
     return xi, eta
 
-def getNormalCoordinatesInTable(tab, x, y, wcs, pqr0, selection=None):
+def getNormalCoordinatesInTable(tab, x, y, w, pqr0, selection=None):
     if selection is None:
         selection = np.full(len(tab), True, dtype=bool)
 
@@ -59,7 +59,7 @@ def getNormalCoordinatesInTable(tab, x, y, wcs, pqr0, selection=None):
     tab['xi'] = np.nan
     tab['eta'] = np.nan
 
-    tab.loc[selection, 'alpha'], tab.loc[selection, 'delta'] = wcs.wcs_pix2world(tab.loc[selection, x].values,
+    tab.loc[selection, 'alpha'], tab.loc[selection, 'delta'] = w.wcs_pix2world(tab.loc[selection, x].values,
                                                                                  tab.loc[selection, y].values, 1)
 
     xi, eta = getNormalCoordinates(
@@ -131,12 +131,14 @@ def calculateFootprintAndIfPointsAreInside(wcsIn, wcsOut, points=None, undistort
     return np.vstack([corners_out, corners_out[0]]), in_footprint
 
 
-def getV2V3FromHeader(x, y, header, hduList):
+def getV2V3FromHeader(x, y, header, hduList, corrected=False):
     ## Use the WCS to correct the pixel coordinates for distortion
-    w = wcs.WCS(header, fobj=hduList)
+    if ((not corrected) and (hduList is not None)):
+        w = wcs.WCS(header, fobj=hduList)
 
-    ## Get the x-y coordinates corrected for all distortion
-    xCorr, yCorr = w.pix2foc(x, y, 0)
+        xCorr, yCorr = w.pix2foc(x, y, 1)
+    else:
+        xCorr, yCorr = x, y
 
     ## Grab the reference x-y coordinates from the header
     xRef = float(header['IDCXREF'])
@@ -155,4 +157,11 @@ def getV2V3FromHeader(x, y, header, hduList):
 
     dx = (xCorr - xRef)
     dy = (yCorr - yRef)
-    return v2_0 + ocx11 * dx + ocx10 * dy, v3_0 - ocy11 * dx - ocy10 * dy
+
+    detectorName = hduList[0].header['DETECTOR']
+    if (detectorName == 'HRC'):
+        return (v2_0 - ocx11 * dx - ocx10 * dy) * u.arcsec, (v3_0 + ocy11 * dx + ocy10 * dy) * u.arcsec
+    elif (detectorName == 'WFC'):
+        return (v2_0 + ocx11 * dx + ocx10 * dy) * u.arcsec, (v3_0 - ocy11 * dx - ocy10 * dy) * u.arcsec
+    elif (detectorName == 'SBC'):
+        return (v2_0 + ocx11 * dx + ocx10 * dy) * u.arcsec, (v3_0 + ocy11 * dx + ocy10 * dy) * u.arcsec
