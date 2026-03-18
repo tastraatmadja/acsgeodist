@@ -8,6 +8,8 @@ import numpy as np
 
 ACS_PLATESCALE = 50.0 * u.mas / u.pix
 
+HRC_PLATESCALE = np.array([28, 25]) * u.mas / u.pix
+
 SBC_PLATESCALE = np.array([34, 30]) * u.mas / u.pix
 
 ## SBC_PLATESCALE = np.array([31.21, 32.74]) * u.mas / u.pix

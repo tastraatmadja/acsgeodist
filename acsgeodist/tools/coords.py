@@ -161,7 +161,7 @@ def getV2V3FromHeader(x, y, header, hduList, corrected=False):
     detectorName = hduList[0].header['DETECTOR']
     if (detectorName == 'HRC'):
         return (v2_0 - ocx11 * dx - ocx10 * dy) * u.arcsec, (v3_0 + ocy11 * dx + ocy10 * dy) * u.arcsec
-    elif (detectorName == 'WFC'):
-        return (v2_0 + ocx11 * dx + ocx10 * dy) * u.arcsec, (v3_0 - ocy11 * dx - ocy10 * dy) * u.arcsec
     elif (detectorName == 'SBC'):
         return (v2_0 + ocx11 * dx + ocx10 * dy) * u.arcsec, (v3_0 + ocy11 * dx + ocy10 * dy) * u.arcsec
+    elif (detectorName == 'WFC'):
+        return (v2_0 + ocx11 * dx + ocx10 * dy) * u.arcsec, (v3_0 - ocy11 * dx - ocy10 * dy) * u.arcsec
