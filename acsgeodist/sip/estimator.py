@@ -365,43 +365,40 @@ class SIPEstimator:
                                 ## Initialize the linear regression
                                 reg = linear_model.LinearRegression(fit_intercept=False, copy_X=False)
 
-                                for iteration3 in range(N_ITER_UNCERTS):
-                                    reg.fit(X, xiRef / self.scalerX, sample_weight=weights)
+                                reg.fit(X, xiRef / self.scalerX, sample_weight=weights)
 
-                                    coeffsA = reg.coef_ * self.scalerX / scalerArray
+                                coeffsA = reg.coef_ * self.scalerX / scalerArray
 
-                                    reg.fit(X, etaRef / self.scalerY, sample_weight=weights)
+                                reg.fit(X, etaRef / self.scalerY, sample_weight=weights)
 
-                                    coeffsB = reg.coef_ * self.scalerY / scalerArray
+                                coeffsB = reg.coef_ * self.scalerY / scalerArray
 
-                                    xiPred  = np.matmul(X * scalerArray, coeffsA)
-                                    etaPred = np.matmul(X * scalerArray, coeffsB)
+                                xiPred  = np.matmul(X * scalerArray, coeffsA)
+                                etaPred = np.matmul(X * scalerArray, coeffsB)
 
-                                    ## Residuals already in pixel and in image axis
-                                    residualsXi  = xiRef - xiPred
-                                    residualsEta = etaRef - etaPred
+                                ## Residuals already in pixel and in image axis
+                                residualsXi  = xiRef - xiPred
+                                residualsEta = etaRef - etaPred
 
-                                    rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
-                                    rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
+                                rmsXi  = np.sqrt(np.average(residualsXi ** 2, weights=weights))
+                                rmsEta = np.sqrt(np.average(residualsEta ** 2, weights=weights))
 
-                                    residuals = np.vstack([residualsXi, residualsEta]).T
+                                residuals = np.vstack([residualsXi, residualsEta]).T
 
-                                    '''
-                                    ## Use the residuals and the corresponding weights to estimate the mean and covariance
-                                    ## matrix of the residual distribution
-                                    mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
+                                ## Use the weights to estimate the mean and covariance matrix of the residual
+                                ## distribution
+                                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
 
-                                    try:
-                                        ## Calculate the Mahalanobis Distance, i.e. standardized distance
-                                        ## from the center of the gaussian distribution
-                                        z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
-                                    except np.linalg.LinAlgError:
-                                        print("{0:s} HAS A SINGULAR MATRIX: BREAKING OFF ITERATION...".format(rootname))
-                                        break
-                                    ''';
+                                try:
+                                    ## Calculate the Mahalanobis Distance, i.e. standardized distance
+                                    ## from the center of the gaussian distribution
+                                    z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+                                except np.linalg.LinAlgError:
+                                    print("{0:s} HAS A SINGULAR MATRIX: BREAKING OFF ITERATION...".format(rootname))
+                                    break
 
-                                    ## We now use the z statistics to re-calculate the weights
-                                    weights = stat.wdecay(z)
+                                ## We now use the z statistics to re-calculate the weights
+                                weights = stat.wdecay(z)
 
                                 ## What we now call 'retained' are those stars with full weight
                                 retained0 = weights >= 1.0
