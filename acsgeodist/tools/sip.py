@@ -32,21 +32,21 @@ def getUpperTriangularIndex(i, j):
 Return the lower triangular index of a square matrix with any size 
 Example below for n = 5, the p index for any given m,n index will
 be as the following:
- * i\j|  0 |  1 |  2 |  3 |  4 |
- * ---+----+----+----+----+----|
- *  0 |  0 |  2 |  5 |  9 | 14 |
- * ---+----+----+----+----+-----
- *  1 |  1 |  4 |  8 | 13 |
- * ---+----+----+----+-----
- *  2 |  3 |  7 | 12 |
- * ---+----+----+-----
- *  3 |  6 | 11 |
+ * ---+-----
+ *  0 |  0 |  
  * ---+----+-----
- *  4 | 10 |
- * ---------
+ *  1 |  2 |  1 |
+ * ---+----+----+-----
+ *  2 |  5 |  4 |  3 |
+ * ---+----+----+----+-----
+ *  3 |  9 |  8 |  7 |  6 |
+ * ---+----+----+----+----------
+ *  4 | 14 | 13 | 12 | 11 | 10 |
+ * ---+----+----+----+----+-----
+ * m/n|  0 |  1 |  2 |  3 |  4 |
 '''
 def getLowerTriangularIndex(m, n):
-    return m+n
+    return int(getUpperTriangularMatrixNumberOfElements(m+1) - n - 1)
 
 '''
 Given an upper triangular index p, return the Cantor pair of integers
@@ -161,7 +161,6 @@ def getCXCYCoeffsFromABCoeffs(A, B):
     ''';
 
     for p in range(1, CX.shape[0]):
-        m, n = getMeurerPair(p)
         CX[p], CY[p] = (inv_lin_mat @ np.array([[A[p]], [B[p]]])).flatten()
 
     return CX, CY, inv_lin_mat

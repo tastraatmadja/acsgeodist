@@ -1470,16 +1470,15 @@ class SIPEstimator:
                    'posTarg2', 'nIterTotal', 'nStars0', 'nStars1', 'rmsX', 'rmsY', 'rmsXi', 'rmsEta', 'crval1',
                    'crval2', 'cd11', 'cd12', 'cd21', 'cd22']
         for ppp in range(nParsAxis):
+            i, j = sip.getCantorPair(ppp)
             for axis in range(NAXIS):
-                coeffName = '{0:s}_{1:d}'.format(acsconstants.COEFF_LABELS[axis], ppp + 1)
-
+                coeffName = '{0:s}_{1:d}_{2:d}'.format(acsconstants.COEFF_LABELS[axis], i, j)
                 columns.append(coeffName)
 
         for ppp in range(1, nParsAxis):
-            i, j = sip.getCantorPair(ppp)
+            m, n = sip.getMeurerPair(ppp)
             for axis in range(NAXIS):
-                coeffName = 'C{0:s}{1:d}{2:d}'.format(acsconstants.AXIS_NAMES[axis].replace(r'$', ''), i, j)
-
+                coeffName = 'C{0:s}{1:d}{2:d}'.format(acsconstants.AXIS_NAMES[axis].replace(r'$', ''), m, n)
                 columns.append(coeffName)
 
         columns.append('zp')
@@ -1512,17 +1511,18 @@ class SIPEstimator:
                 self.data['cd{}{}'.format(ii + 1, jj + 1)].append(CDMatrix[ii, jj + 1])
 
         for ppp, (thisA, thisB), in enumerate(zip(A, B)):
-            self.data['A_{}'.format(ppp + 1)].append(thisA)
-            self.data['B_{}'.format(ppp + 1)].append(thisB)
+            i, j = sip.getCantorPair(ppp)
+            self.data['A_{}_{}'.format(i, j)].append(thisA)
+            self.data['B_{}_{}'.format(i, j)].append(thisB)
 
         for p in range(1, 3):
             CX[p] = R[0, p - 1]
             CY[p] = R[1, p - 1]
 
         for ppp in range(1, CX.size):
-            i, j = sip.getCantorPair(ppp)
-            self.data['CX{0:d}{1:d}'.format(i, j)].append(CX[ppp])
-            self.data['CY{0:d}{1:d}'.format(i, j)].append(CY[ppp])
+            m, n = sip.getMeurerPair(ppp)
+            self.data['CX{0:d}{1:d}'.format(m, n)].append(CX[ppp])
+            self.data['CY{0:d}{1:d}'.format(m, n)].append(CY[ppp])
 
         if self.individualZP:
             self.data['zp'].append('individualZP')
