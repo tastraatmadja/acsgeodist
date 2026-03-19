@@ -39,6 +39,10 @@ def getCantorPair(p):
     j = int(p - t)
     return int(w - j), j
 
+def getMeurerPair(p):
+    i, j = getCantorPair(p)
+    return i+j, i
+
 def buildModel(X, Y, pOrder, scalerX=1.0, scalerY=1.0, bothAxes=False):
     n = pOrder + 1
 
