@@ -8,6 +8,7 @@ from astropy.io import ascii, fits
 from astropy.table import QTable
 from astropy.time import Time
 from astropy.visualization import ZScaleInterval
+from astropy.wcs import WCS
 from astroquery.gaia import Gaia
 from copy import deepcopy
 import gc
@@ -59,7 +60,8 @@ xLabel, yLabel = r'$X$ [pix]', r'$Y$ [pix]'
 class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, rotate='orientat',
-                 make_lithographic_and_filter_mask_corrections=True, cross_match=True, min_ruwe=0.8, max_ruwe=1.2):
+                 make_lithographic_and_filter_mask_corrections=True, own_d2imtable=True, cross_match=True,
+                 min_ruwe=0.8, max_ruwe=1.2):
         self.individualZP      = individualZP
         self.refCat            = deepcopy(referenceCatalog)
         self.wcsRef            = deepcopy(referenceWCS)
@@ -76,8 +78,9 @@ class SIPEstimator:
             self.rotate = self.rotate.lower()
 
         self.make_lithographic_and_filter_mask_corrections = make_lithographic_and_filter_mask_corrections
+        self.own_d2imtable = own_d2imtable
 
-        if self.make_lithographic_and_filter_mask_corrections:
+        if self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
             correctionTableDir = os.environ['ACSGEODIST_CONFIG']
 
             dtab_chip1_path = '{0:s}/wfc1.f606w.64x64.dtab'.format(correctionTableDir)
@@ -270,7 +273,7 @@ class SIPEstimator:
                     XC = hst1pass['X'][selection] - self.X0
                     YC = hst1pass['Y'][selection] - self.Y0[jj]
 
-                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
+                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
@@ -284,6 +287,15 @@ class SIPEstimator:
 
                         del dcorr
                         del fcorr
+
+                    if self.make_lithographic_and_filter_mask_corrections and (not self.own_d2imtable):
+                        print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
+                        w = WCS(hdu, hduList)
+
+                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+
+                        XC -= self.X0
+                        YC -= self.Y0[jj]
 
                     xSize = 8
                     ySize = xSize
@@ -629,7 +641,7 @@ class SIPEstimator:
                     XCorners = np.array([0.5, 0.5, naxis1+0.5, naxis1+0.5, 0.5])
                     YCorners = np.array([0.5, naxis2+0.5, naxis2+0.5, 0.5, 0.5])
 
-                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
+                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
@@ -650,6 +662,18 @@ class SIPEstimator:
                         ## Apply the lithographic mask correction
                         XCorners -= (dcorr[:, 2] - fcorr[:, 2])
                         YCorners -= (dcorr[:, 3] - fcorr[:, 3])
+
+                    if self.make_lithographic_and_filter_mask_corrections and (not self.own_d2imtable):
+                        print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
+                        w = WCS(hdu, hduList)
+
+                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+
+                        XC -= self.X0
+                        YC -= self.Y0[jj]
+
+                        ## Repeat for the corners
+                        XCorners, YCorners = w.det2im(np.vstack([XCorners, YCorners]).T, 1).T
 
                     ## Apply the zero points to the corner points
                     XCorners -= self.X0
@@ -1239,7 +1263,7 @@ class SIPEstimator:
                     XC = hst1pass['X'][selection] - self.X0
                     YC = hst1pass['Y'][selection] - self.Y0[jj]
 
-                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
+                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
@@ -1256,6 +1280,15 @@ class SIPEstimator:
 
                         del dcorr
                         del fcorr
+
+                    if self.make_lithographic_and_filter_mask_corrections and (not self.own_d2imtable):
+                        print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
+                        w = WCS(hdu, hduList)
+
+                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+
+                        XC -= self.X0
+                        YC -= self.Y0[jj]
 
                     X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY,
                                                     bothAxes=True)
@@ -1640,11 +1673,11 @@ class TimeDependentBSplineEstimator(SIPEstimator):
     def __init__(self, tMin, tMax, referenceCatalog, referenceWCS, tRef0, pOrderIndiv, pOrder, kOrder, nKnots,
                  detectorName='WFC', qMax=0.5, min_n_app=3, max_pix_tol=1.0, min_n_refstar=100, min_t_exp=99.0,
                  min_refstar_ratio=0.6, max_pos_targs=0.0, individualZP=True, make_lithographic_and_filter_mask_corrections=True,
-                 cross_match=True):
+                 own_d2imtable=True, cross_match=True):
         super().__init__(referenceCatalog, referenceWCS, tRef0, qMax=qMax, min_n_app=min_n_app, max_pix_tol=max_pix_tol,
                        min_n_refstar=min_n_refstar, min_refstar_ratio=min_refstar_ratio,
                        make_lithographic_and_filter_mask_corrections=make_lithographic_and_filter_mask_corrections,
-                       cross_match=cross_match, individualZP=individualZP)
+                       own_d2imtable=own_d2imtable, cross_match=cross_match, individualZP=individualZP)
         self.pOrderIndiv = pOrderIndiv ## Maximum polynomial order that are inferred individually for each image
         self.pOrder      = pOrder      ## Total polynomial orders, including those with time-dependent model
         self.kOrder      = kOrder      ## B-spline order
@@ -2618,7 +2651,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             XCorners = np.array([0.5, 0.5, naxis1 + 0.5, naxis1 + 0.5, 0.5])
                             YCorners = np.array([0.5, naxis2 + 0.5, naxis2 + 0.5, 0.5, 0.5])
 
-                            if self.make_lithographic_and_filter_mask_corrections:
+                            if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
                                 dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj],
                                                                              hst1pass['X'][selection].value,
                                                                              hst1pass['Y'][selection].value - yzp,
@@ -2642,6 +2675,18 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 ## Apply the lithographic mask correction
                                 XCorners -= (dcorr[:, 2] - fcorr[:, 2])
                                 YCorners -= (dcorr[:, 3] - fcorr[:, 3])
+
+                            if self.make_lithographic_and_filter_mask_corrections and (not self.own_d2imtable):
+                                print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
+                                w = WCS(hdu, hduList)
+
+                                XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+
+                                XC -= self.X0
+                                YC -= self.Y0[jjj]
+
+                                ## Repeat for the corners
+                                XCorners, YCorners = w.det2im(np.vstack([XCorners, YCorners]).T, 1).T
 
                             ## Apply the zero points to the corner points
                             XCorners -= self.X0
@@ -3187,7 +3232,7 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         XC = hst1pass['X'][selection] - self.X0
                         YC = hst1pass['Y'][selection] - self.Y0[jjj]
 
-                        if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections:
+                        if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
                             dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj],
                                                                          hst1pass['X'][selection].value,
                                                                          hst1pass['Y'][selection].value - yzp,
@@ -3204,6 +3249,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             del dcorr
                             del fcorr
+
+                        if self.make_lithographic_and_filter_mask_corrections and (not self.own_d2imtable):
+                            print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
+                            w = WCS(hdu, hduList)
+
+                            XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+
+                            XC -= self.X0
+                            YC -= self.Y0[jjj]
 
                         Xp, self.scalerArray = sip.buildModel(XC, YC, self.pOrder,
                                                               scalerX=self.scalerX,
