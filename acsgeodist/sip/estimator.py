@@ -292,7 +292,8 @@ class SIPEstimator:
                         print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
                         w = WCS(hdu, hduList)
 
-                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) - np.array([0, yzp]),
+                                          1).T
 
                         XC -= self.X0
                         YC -= self.Y0[jj]
@@ -667,7 +668,8 @@ class SIPEstimator:
                         print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
                         w = WCS(hdu, hduList)
 
-                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) - np.array([0, yzp]),
+                                          1).T
 
                         XC -= self.X0
                         YC -= self.Y0[jj]
@@ -1285,7 +1287,8 @@ class SIPEstimator:
                         print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
                         w = WCS(hdu, hduList)
 
-                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+                        XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) - np.array([0, yzp]),
+                                          1).T
 
                         XC -= self.X0
                         YC -= self.Y0[jj]
@@ -2680,7 +2683,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                                 print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
                                 w = WCS(hdu, hduList)
 
-                                XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+                                XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) -
+                                                  np.array([0, yzp]), 1).T
 
                                 XC -= self.X0
                                 YC -= self.Y0[jjj]
@@ -3254,7 +3258,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             print("USING NON-SIP CORRECTIONS FROM THE FILE HEADER")
                             w = WCS(hdu, hduList)
 
-                            XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()), 1).T
+                            XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) -
+                                              np.array([0, yzp]), 1).T
 
                             XC -= self.X0
                             YC -= self.Y0[jjj]
