@@ -273,7 +273,8 @@ class SIPEstimator:
                     XC = hst1pass['X'][selection] - self.X0
                     YC = hst1pass['Y'][selection] - self.Y0[jj]
 
-                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
+                    if ((self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections
+                            and self.own_d2imtable):
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
@@ -294,9 +295,8 @@ class SIPEstimator:
 
                         XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) - np.array([0, yzp]),
                                           1).T
-
-                        XC -= self.X0
-                        YC -= self.Y0[jj]
+                        XC -= self.XRef
+                        YC -= self.YRef
 
                     xSize = 8
                     ySize = xSize
@@ -642,7 +642,8 @@ class SIPEstimator:
                     XCorners = np.array([0.5, 0.5, naxis1+0.5, naxis1+0.5, 0.5])
                     YCorners = np.array([0.5, naxis2+0.5, naxis2+0.5, 0.5, 0.5])
 
-                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
+                    if ((self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections
+                            and self.own_d2imtable):
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
@@ -670,16 +671,15 @@ class SIPEstimator:
 
                         XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) - np.array([0, yzp]),
                                           1).T
-
-                        XC -= self.X0
-                        YC -= self.Y0[jj]
+                        XC -= self.XRef
+                        YC -= self.YRef
 
                         ## Repeat for the corners
                         XCorners, YCorners = w.det2im(np.vstack([XCorners, YCorners]).T, 1).T
 
                     ## Apply the zero points to the corner points
-                    XCorners -= self.X0
-                    YCorners -= self.Y0[0]
+                    XCorners -= self.XRef
+                    YCorners -= self.YRef
 
                     X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY)
 
@@ -1265,7 +1265,8 @@ class SIPEstimator:
                     XC = hst1pass['X'][selection] - self.X0
                     YC = hst1pass['Y'][selection] - self.Y0[jj]
 
-                    if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
+                    if ((self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections
+                            and self.own_d2imtable):
                         dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jj], hst1pass['X'][selection].value,
                                                                      hst1pass['Y'][selection].value - yzp,
                                                                      self.XRef * 2, self.YRef * 2)).T
@@ -1289,9 +1290,8 @@ class SIPEstimator:
 
                         XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) - np.array([0, yzp]),
                                           1).T
-
-                        XC -= self.X0
-                        YC -= self.Y0[jj]
+                        XC -= self.XRef
+                        YC -= self.YRef
 
                     X, scalerArray = sip.buildModel(XC, YC, pOrder, scalerX=self.scalerX, scalerY=self.scalerY,
                                                     bothAxes=True)
@@ -2654,7 +2654,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                             XCorners = np.array([0.5, 0.5, naxis1 + 0.5, naxis1 + 0.5, 0.5])
                             YCorners = np.array([0.5, naxis2 + 0.5, naxis2 + 0.5, 0.5, 0.5])
 
-                            if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
+                            if ((self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections
+                                    and self.own_d2imtable):
                                 dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj],
                                                                              hst1pass['X'][selection].value,
                                                                              hst1pass['Y'][selection].value - yzp,
@@ -2685,16 +2686,15 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                                 XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) -
                                                   np.array([0, yzp]), 1).T
-
-                                XC -= self.X0
-                                YC -= self.Y0[jjj]
+                                XC -= self.XRef
+                                YC -= self.YRef
 
                                 ## Repeat for the corners
                                 XCorners, YCorners = w.det2im(np.vstack([XCorners, YCorners]).T, 1).T
 
                             ## Apply the zero points to the corner points
-                            XCorners -= self.X0
-                            YCorners -= self.Y0[0]
+                            XCorners -= self.XRef
+                            YCorners -= self.YRef
 
                             X, scalerArray = sip.buildModel(XC, YC, self.pOrder,
                                                             scalerX=self.scalerX, scalerY=self.scalerY)
@@ -3236,7 +3236,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
                         XC = hst1pass['X'][selection] - self.X0
                         YC = hst1pass['Y'][selection] - self.Y0[jjj]
 
-                        if (self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections and self.own_d2imtable:
+                        if ((self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections
+                                and self.own_d2imtable):
                             dcorr = np.array(litho.interp_dtab_ftab_data(self.dtabs[jjj],
                                                                          hst1pass['X'][selection].value,
                                                                          hst1pass['Y'][selection].value - yzp,
@@ -3260,9 +3261,8 @@ class TimeDependentBSplineEstimator(SIPEstimator):
 
                             XC, YC = w.det2im(np.array(hst1pass[['X', 'Y']][selection].to_pandas()) -
                                               np.array([0, yzp]), 1).T
-
-                            XC -= self.X0
-                            YC -= self.Y0[jjj]
+                            XC -= self.XRef
+                            YC -= self.YRef
 
                         Xp, self.scalerArray = sip.buildModel(XC, YC, self.pOrder,
                                                               scalerX=self.scalerX,
