@@ -225,7 +225,7 @@ class SIPEstimator:
                 hst1pass['sourceID'] = np.zeros(len(hst1pass), dtype='<U24')
 
                 if not self.individualZP:
-                    dxs, dys, rolls = [], [], []
+                    dxs, dys, rolls, coeffsAs, coeffsBs = [], [], [], [], []
 
                 corners = []
 
@@ -329,6 +329,13 @@ class SIPEstimator:
                     else:
                         roll = 0.0
 
+                    ## Initialize the coefficients
+                    coeffsA = np.zeros(X.shape[1])
+                    coeffsB = np.zeros(X.shape[1])
+
+                    coeffsA[1] = 1.0
+                    coeffsB[2] = 1.0
+
                     ## Initialize the reference coordinates
                     xiRef  = deepcopy(xi.values)
                     etaRef = deepcopy(eta.values)
@@ -355,20 +362,27 @@ class SIPEstimator:
                     ## IF we want to have individual zero points for each chip we initialize the container for shifts
                     ## and rolls here
                     if self.individualZP:
-                        dxs, dys, rolls = [], [], []
+                        dxs, dys, rolls, coeffsAs, coeffsBs = [], [], [], [], []
 
                     nIterTotal = 0
                     weightSum  = np.inf
                     stop_outer = False
                     for iteration in range(N_ITER_OUTER):
                         if not stop_outer:
+                            ## For individual zero point OR this is the bottom chip (CHIP = 2), we transform the
+                            ## sky coordinates onto the UV frame
                             if (self.individualZP or (chip == 2)):
                                 dxs.append(sx)
                                 dys.append(sy)
                                 rolls.append(roll)
+                                coeffsAs.append(coeffsA)
+                                coeffsBs.append(coeffsB)
 
                                 xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
                             else:
+                                ## For single zero point AND it's the top chip (CHIP == 1), we use the values
+                                ## from the bottom chip to repeatedly transform the sky frame into the
+                                ## UV frame
                                 for (sx, sy, roll) in zip(dxs, dys, rolls):
                                     xiRef, etaRef = coords.shift_rotate_coords(xiRef, etaRef, sx, sy, roll)
 
@@ -622,7 +636,28 @@ class SIPEstimator:
                                                                                                                  chip,
                                                                                                                  pOrder)
 
-                        df_linear = pd.DataFrame(data={'dx': dxs, 'dy': dys, 'rotation': rolls})
+                        linear_transform_columns = ['dx', 'dy', 'rotation']
+
+                        for ppp in range(sip.getUpperTriangularMatrixNumberOfElements(pOrder+1)):
+                            i, j = sip.getCantorPair(ppp)
+                            for axis in range(NAXIS):
+                                linear_transform_columns.append('{0:s}_{1:d}_{2:d}'.format(
+                                    acsconstants.COEFF_LABELS[axis], i, j))
+
+                        linear_transform_data = {column: [] for column in linear_transform_columns}
+
+                        linear_transform_data ['dx'] = dxs
+                        linear_transform_data ['dy'] = dys
+                        linear_transform_data ['rotation'] = rolls
+
+                        for thisA, thisB in zip(coeffsAs, coeffsBs):
+                            for ppp in range(sip.getUpperTriangularMatrixNumberOfElements(pOrder + 1)):
+                                i, j = sip.getCantorPair(ppp)
+
+                                linear_transform_data['A_{}_{}'.format(i, j)].append(thisA[ppp])
+                                linear_transform_data['B_{}_{}'.format(i, j)].append(thisB[ppp])
+
+                        df_linear = pd.DataFrame(data=linear_transform_data)
 
                         df_linear.to_csv(linearTransformFilename, index=True)
 
