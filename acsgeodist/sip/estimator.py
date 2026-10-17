@@ -61,7 +61,7 @@ class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, rotate='orientat',
                  make_lithographic_and_filter_mask_corrections=True, own_d2imtable=True, cross_match=True,
-                 min_ruwe=0.8, max_ruwe=1.2):
+                 min_ruwe=0.8, max_ruwe=1.2, use_center_star=False):
         self.individualZP      = individualZP
         self.refCat            = deepcopy(referenceCatalog)
         self.wcsRef            = deepcopy(referenceWCS)
@@ -74,6 +74,7 @@ class SIPEstimator:
         self.alpha0            = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
         self.delta0            = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
         self.rotate            = rotate
+        self.use_center_star   = use_center_star
         if (self.rotate is not None):
             self.rotate = self.rotate.lower()
 
@@ -318,10 +319,14 @@ class SIPEstimator:
                     alpha0Im = float(hdu.header['CRVAL1'])
                     delta0Im = float(hdu.header['CRVAL2'])
 
-                    xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
-
                     ## Initialize shift and rotation
-                    sx, sy = xi0[0], eta0[0]
+                    if self.use_center_star:
+                        centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
+                       sx, sy = xi[centerStar], eta[centerStar]
+                    else:
+                        xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
+                        sx, sy = xi0[0], eta0[0]
+
                     if (self.rotate == 'orientat'):
                         roll = np.deg2rad(orientat)
                     elif (self.rotate == 'pa_v3'):
