@@ -322,7 +322,7 @@ class SIPEstimator:
                     ## Initialize shift and rotation
                     if self.use_center_star:
                         centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
-                       sx, sy = xi[centerStar], eta[centerStar]
+                        sx, sy = xi[centerStar], eta[centerStar]
                     else:
                         xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
                         sx, sy = xi0[0], eta0[0]
