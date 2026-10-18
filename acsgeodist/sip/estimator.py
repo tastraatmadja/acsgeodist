@@ -172,7 +172,8 @@ class SIPEstimator:
         posTarg1 = float(hduList[0].header['POSTARG1'])
         posTarg2 = float(hduList[0].header['POSTARG2'])
 
-        dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
+        ## dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
+        dt = t_acs.decimalyear - self.tRef0.decimalyear
 
         ## We use the observation time, in combination with the proper motions to move
         ## the coordinates into the time
