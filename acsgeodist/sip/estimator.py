@@ -61,7 +61,7 @@ class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, rotate='orientat',
                  make_lithographic_and_filter_mask_corrections=True, own_d2imtable=True, cross_match=True,
-                 min_ruwe=0.8, max_ruwe=1.2, use_center_star=False):
+                 min_ruwe=0.8, max_ruwe=1.2, use_central_star=False):
         self.individualZP      = individualZP
         self.refCat            = deepcopy(referenceCatalog)
         self.wcsRef            = deepcopy(referenceWCS)
@@ -74,7 +74,7 @@ class SIPEstimator:
         self.alpha0            = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
         self.delta0            = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
         self.rotate            = rotate
-        self.use_center_star   = use_center_star
+        self.use_central_star   = use_central_star
         if (self.rotate is not None):
             self.rotate = self.rotate.lower()
 
@@ -138,6 +138,8 @@ class SIPEstimator:
             print("INITIAL SKY FRAME ROTATION IS USING {}".format(self.rotate))
         else:
             print("NO INITIAL SKY FRAME ROTATION IS PERFORMED!")
+        if (self.use_central_star):
+            print("MOST-CENTRAL STAR IS USED AS INITIAL SHIFT")
 
         self.detectorName = detectorName
         self._setDetectorParameters()
@@ -268,11 +270,11 @@ class SIPEstimator:
 
                     print("CHIP:", chipTitle, "P_ORDER:", pOrder, "N_STARS:", nData)
 
-                    xi  = self.refCat.iloc[refStarIdx]['xt'] / vaFactor
-                    eta = self.refCat.iloc[refStarIdx]['yt'] / vaFactor
+                    xi  = self.refCat.iloc[refStarIdx]['xt'].values / vaFactor
+                    eta = self.refCat.iloc[refStarIdx]['yt'].values / vaFactor
 
-                    XC = hst1pass['X'][selection] - self.X0
-                    YC = hst1pass['Y'][selection] - self.Y0[jj]
+                    XC = hst1pass['X'][selection].value - self.X0
+                    YC = hst1pass['Y'][selection].value - self.Y0[jj]
 
                     if ((self.detectorName == 'WFC') and self.make_lithographic_and_filter_mask_corrections
                             and self.own_d2imtable):
@@ -320,9 +322,10 @@ class SIPEstimator:
                     delta0Im = float(hdu.header['CRVAL2'])
 
                     ## Initialize shift and rotation
-                    if self.use_center_star:
+                    if self.use_central_star:
                         centerStar = np.argmin(np.sqrt(XC ** 2 + YC ** 2))
                         sx, sy = xi[centerStar], eta[centerStar]
+                        print("CENTRAL_STAR: {:d} {:f} {:f}".format(centerStar, sx, sy))
                     else:
                         xi0, eta0 = self.wcsRef.wcs_world2pix(np.array([alpha0Im]), np.array([delta0Im]), 1)
                         sx, sy = xi0[0], eta0[0]
@@ -342,8 +345,8 @@ class SIPEstimator:
                     coeffsB[2] = 1.0
 
                     ## Initialize the reference coordinates
-                    xiRef  = deepcopy(xi.values)
-                    etaRef = deepcopy(eta.values)
+                    xiRef  = deepcopy(xi)
+                    etaRef = deepcopy(eta)
 
                     ## Initialize the raw coordinates
                     xyRaw = np.vstack([XC, YC]).T
