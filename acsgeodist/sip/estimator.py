@@ -61,7 +61,8 @@ class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, rotate='orientat',
                  make_lithographic_and_filter_mask_corrections=True, own_d2imtable=True, cross_match=True,
-                 min_ruwe=0.8, max_ruwe=1.2, use_central_star=False, sigma_clipping=False, n_sigma=3):
+                 min_ruwe=0.8, max_ruwe=1.2, use_central_star=False, sigma_clipping=False, n_sigma=3,
+                 swap_chip_number=False):
         self.individualZP      = individualZP
         self.refCat            = deepcopy(referenceCatalog)
         self.wcsRef            = deepcopy(referenceWCS)
@@ -77,6 +78,7 @@ class SIPEstimator:
         self.use_central_star  = use_central_star
         self.sigma_clipping = sigma_clipping
         self.n_sigma = n_sigma
+        self.swap_chip_number = swap_chip_number ## USE IN OLD HST1PASS RESULT WHERE K = 2 IS FOR CHIP 1 (TOP CHIP)
         if (self.rotate is not None):
             self.rotate = self.rotate.lower()
 
@@ -144,6 +146,8 @@ class SIPEstimator:
             print("MOST-CENTRAL STAR IS USED AS INITIAL SHIFT")
         if self.sigma_clipping:
             print("USING SIGMA CLIPPING TO IDENTIFY OUTLIERS")
+        if self.swap_chip_number:
+            print("K NUMBER SWAPPED IN HST1PASS RESULTS")
 
         self.detectorName = detectorName
         self._setDetectorParameters()
@@ -176,6 +180,12 @@ class SIPEstimator:
         self.refCat['yt'] = self.refCat['y'].values + self.refCat['pm_y'].values * dt
 
         hst1pass = table.hstack([ascii.read(hst1passFile, format='csv'), ascii.read(addendumFilename, format='csv')])
+
+        if self.swap_chip_number:
+            chip1_selection = hst1pass['k'] == 1
+
+            hst1pass['k'][chip1_selection] = 2
+            hst1pass['k'][~chip1_selection] = 1
 
         okayToProceed, nGoodData, refStarRatios = self._getOkayToProceed(hst1pass)
 
