@@ -61,7 +61,7 @@ class SIPEstimator:
     def __init__(self, referenceCatalog, referenceWCS, tRef0, qMax=0.5, min_n_app=3, max_pix_tol=1.0,
                  min_n_refstar=100, min_refstar_ratio = 0.0, individualZP=True, rotate='orientat',
                  make_lithographic_and_filter_mask_corrections=True, own_d2imtable=True, cross_match=True,
-                 min_ruwe=0.8, max_ruwe=1.2, use_central_star=False):
+                 min_ruwe=0.8, max_ruwe=1.2, use_central_star=False, sigma_clipping=False, n_sigma=3):
         self.individualZP      = individualZP
         self.refCat            = deepcopy(referenceCatalog)
         self.wcsRef            = deepcopy(referenceWCS)
@@ -74,7 +74,9 @@ class SIPEstimator:
         self.alpha0            = float(self.wcsRef.to_header()['CRVAL1']) * u.deg
         self.delta0            = float(self.wcsRef.to_header()['CRVAL2']) * u.deg
         self.rotate            = rotate
-        self.use_central_star   = use_central_star
+        self.use_central_star  = use_central_star
+        self.sigma_clipping = sigma_clipping
+        self.n_sigma = n_sigma
         if (self.rotate is not None):
             self.rotate = self.rotate.lower()
 
@@ -354,14 +356,17 @@ class SIPEstimator:
                     ## Initialize the indices
                     indices = np.argwhere(selection)
 
-                    ## Initialize the weights using the match residuals
-                    ## weights = np.ones(XC.size)
-                    residuals = np.array([delX[selection], delY[selection]]).T
+                    if self.sigma_clipping:
+                        weights = np.ones(XC.size)
+                    else:
+                        ## Initialize the weights using the match residuals
+                        ## weights = np.ones(XC.size)
+                        residuals = np.array([delX[selection], delY[selection]]).T
 
-                    ## Use the weights to estimate the mean and covariance matrix of the residual distribution
-                    mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, np.ones(residuals.shape[0]))
+                        ## Use the weights to estimate the mean and covariance matrix of the residual distribution
+                        mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, np.ones(residuals.shape[0]))
 
-                    weights = stat.wdecay(stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
+                        weights = stat.wdecay(stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov)))
 
                     uncerts = np.zeros_like(weights)
 
@@ -420,9 +425,12 @@ class SIPEstimator:
 
                                 residuals = np.vstack([residualsXi, residualsEta]).T
 
-                                ## Use the weights to estimate the mean and covariance matrix of the residual
-                                ## distribution
-                                mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
+                                if self.sigma_clipping:
+                                    mean, cov = stat.estimateMeanAndCovarianceMatrix(residuals)
+                                else:
+                                    ## Use the weights to estimate the mean and covariance matrix of the residual
+                                    ## distribution
+                                    mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
 
                                 try:
                                     ## Calculate the Mahalanobis Distance, i.e. standardized distance
@@ -432,8 +440,13 @@ class SIPEstimator:
                                     print("{0:s} HAS A SINGULAR MATRIX: BREAKING OFF ITERATION...".format(rootname))
                                     break
 
-                                ## We now use the z statistics to re-calculate the weights
-                                weights = stat.wdecay(z)
+                                if self.sigma_clipping:
+                                    retain_this = z <= self.n_sigma
+                                    weights = np.zeros_like(retain_this)
+                                    weights[retain_this] = 1.0
+                                else:
+                                    ## We now use the z statistics to re-calculate the weights
+                                    weights = stat.wdecay(z)
 
                                 ## What we now call 'retained' are those stars with full weight
                                 retained0 = weights >= 1.0
@@ -1573,7 +1586,7 @@ class SIPEstimator:
         self.data['tExp'].append(tExp)
         self.data['posTarg1'].append(posTarg1)
         self.data['posTarg2'].append(posTarg2)
-        self.data['nIterTotal'].append(0)
+        self.data['nIterTotal'].append(nIterTotal)
         self.data['nStars0'].append(nStars0)
         self.data['nStars1'].append(nStars)
         self.data['rmsX'].append(rmsX)
