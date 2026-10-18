@@ -140,8 +140,10 @@ class SIPEstimator:
             print("INITIAL SKY FRAME ROTATION IS USING {}".format(self.rotate))
         else:
             print("NO INITIAL SKY FRAME ROTATION IS PERFORMED!")
-        if (self.use_central_star):
+        if self.use_central_star:
             print("MOST-CENTRAL STAR IS USED AS INITIAL SHIFT")
+        if self.sigma_clipping:
+            print("USING SIGMA CLIPPING TO IDENTIFY OUTLIERS")
 
         self.detectorName = detectorName
         self._setDetectorParameters()
