@@ -173,7 +173,7 @@ class SIPEstimator:
         posTarg2 = float(hduList[0].header['POSTARG2'])
 
         ## dt = t_acs.tcb.jyear - self.tRef0.tcb.jyear
-        dt = t_acs.decimalyear - self.tRef0.decimalyear
+        dt = t_acs.tcb.decimalyear - self.tRef0.tcb.decimalyear
 
         ## We use the observation time, in combination with the proper motions to move
         ## the coordinates into the time
@@ -940,7 +940,7 @@ class SIPEstimator:
                         rmsY = np.sqrt(stat.getWeightedAverage(hst1pass['dv'][selection].value ** 2,
                                                                hst1pass['weights'][selection].value))
 
-                    self._writeData(rootname, filterName, k, t_acs.decimalyear, pa_v3, orientat, vaFactor, tExp,
+                    self._writeData(rootname, filterName, k, t_acs.tcb.decimalyear, pa_v3, orientat, vaFactor, tExp,
                                     posTarg1, posTarg2, nIterTotal, nStars0, nStars, rmsX, rmsY, rmsXi, rmsEta,
                                     alpha0Im, delta0Im, CDMatrix, coeffs[0::2], coeffs[1::2],
                                     CX.flatten(), CY.flatten(), R)
