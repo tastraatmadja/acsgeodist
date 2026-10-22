@@ -25,11 +25,21 @@ def readFitResults(fitResultsFilename, pOrder):
     else:
         return pd.read_csv(fitResultsFilename, sep='\s+', header=None, comment='#', names=columns)
 
-def readHST1PassFile(hst1passFilename, detector='WFC'):
+def readHST1PassFile(hst1passFilename, detector='WFC', swap_chip_number=False):
     if (detector == 'WFC'):
         split = os.path.splitext(hst1passFilename)
 
         columns = list(split[-1].replace(".", ""))
+
+        if swap_chip_number:
+            df_hst1pass = pd.read_csv(hst1passFilename, sep='\\s+', header=None, comment='#', names=columns)
+
+            chip1_selection = df_hst1pass['k'] == 1
+
+            df_hst1pass.loc[chip1_selection, 'k']  = 2
+            df_hst1pass.loc[~chip1_selection, 'k'] = 1
+
+            return df_hst1pass
 
         return pd.read_csv(hst1passFilename, sep='\\s+', header=None, comment='#', names=columns)
     elif (detector == 'SBC'):

@@ -49,7 +49,7 @@ class WCSAlignment:
 
     def __init__(self, referenceCatalog, referenceWCS, tRef0, refImage=None, n_image_stars=1000, n_ref_stars=1000,
                  in_footprint=True, qMax=0.3, min_n_good_sources=100, max_sep_init=5.0 * u.pix,
-                 max_sep_refined=2.0 * u.pix, pOrder=1, n_iter=100):
+                 max_sep_refined=2.0 * u.pix, pOrder=1, n_iter=100, swap_chip_number=False):
         self.df_refCat = deepcopy(referenceCatalog)
         self.wcsRef    = deepcopy(referenceWCS)
         self.tRef0     = deepcopy(tRef0)
@@ -71,12 +71,17 @@ class WCSAlignment:
         self.n = self.pOrder + 1
         self.P = sip.getUpperTriangularMatrixNumberOfElements(self.n)
 
+        self.swap_chip_number = swap_chip_number
 
-    def alignImage(self, hst1passFilenames, imageFilenames, outDir='.', detectorName='WFC'):
+
+    def alignImage(self, hst1passFilenames, imageFilenames, outDir='.', detectorName='WFC', swap_chip_number=None):
         if not isinstance(hst1passFilenames, list):
             hst1passFilenames = [hst1passFilenames]
         if not isinstance(imageFilenames, list):
             imageFilenames = [imageFilenames]
+
+        if (swap_chip_number is not None):
+            self.swap_chip_number = swap_chip_number
 
         self.detectorName = detectorName
         yAxisExtendFactor = 1.2
@@ -120,7 +125,9 @@ class WCSAlignment:
         # transformation and performed the cross-matching the second time.
         for hst1passFilename, imageFilename in zip(hst1passFilenames, imageFilenames):
             print(os.path.basename(hst1passFilename), os.path.basename(imageFilename), self.detectorName)
-            df_hst1pass = reader.readHST1PassFile(hst1passFilename, detector=self.detectorName)
+            df_hst1pass = reader.readHST1PassFile(hst1passFilename,
+                                                  detector=self.detectorName,
+                                                  swap_chip_number=self.swap_chip_number)
 
             hduList = fits.open(imageFilename)
 

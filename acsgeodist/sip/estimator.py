@@ -975,7 +975,7 @@ class SIPEstimator:
                     aperturesRejected = CircularAperture(xyPosRejected, r=15.0)
 
                     aperturesRejected.plot(color='#d95f02', lw=1, alpha=1, ax=axes[jjj,0],
-                                           rasterized=True);  ## BROWNS are accepted sources
+                                           rasterized=True);  ## BROWNS are rejected sources
 
                     axes[jjj,0].set_title('{0:s} --- {1:s} --- {2:d} --- {3:d} ---  {4:0.3f}'.format(rootname,
                                                                                                      chipTitle, nStars0,
