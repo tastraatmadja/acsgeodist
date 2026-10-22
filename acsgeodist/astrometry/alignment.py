@@ -89,6 +89,10 @@ class WCSAlignment:
             self.n_chips        = acsconstants.N_CHIPS
             self.header_numbers = acsconstants.HEADER_NUMBER
             yAxisExtendFactor  = 2.5
+
+            if self.swap_chip_number:
+                print("K NUMBER SWAPPED IN HST1PASS RESULTS")
+
         elif (self.detectorName == 'SBC'):
             self.n_chips        = acsconstants.SBC_N_CHIPS
             self.header_numbers = acsconstants.SBC_HEADER_NUMBER
