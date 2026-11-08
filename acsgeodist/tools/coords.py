@@ -94,6 +94,9 @@ def getCelestialCoordinatesFromNormalCoordinates(xi, eta, c0, frame='icrs'):
 def shift_rotate_coords(x, y, sx, sy, theta):
     return shift_rotate_scale_coords(x, y, sx, sy, 1.0, 1.0, theta)
 
+'''
+Rotate the coordinates clockwise theta and scale by px and py
+'''
 def shift_rotate_scale_coords(x, y, sx, sy, px, py, theta):
     dx = x - sx
     dy = y - sy
