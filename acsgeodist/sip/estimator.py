@@ -3,7 +3,7 @@ from acsgeodist.tools import astro, bspline, coords, litho, plotting, sip, stat
 from acsgeodist.tools.time import convertTime
 from astropy import table
 from astropy import units as u
-from astropy.coordinates import Angle, Distance, SkyCoord
+from astropy.coordinates import Angle, SkyCoord
 from astropy.io import ascii, fits
 from astropy.table import QTable
 from astropy.time import Time
