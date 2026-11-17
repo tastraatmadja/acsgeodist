@@ -443,11 +443,10 @@ class SIPEstimator:
                                     ## Use the weights to estimate the mean and covariance matrix of the residual
                                     ## distribution
                                     mean, cov = stat.estimateMeanAndCovarianceMatrixRobust(residuals, weights)
-
                                 try:
                                     ## Calculate the Mahalanobis Distance, i.e. standardized distance
                                     ## from the center of the gaussian distribution
-                                    z = stat.getMahalanobisDistances(residuals, mean, np.linalg.inv(cov))
+                                    z = stat.getMahalanobisDistances(residuals, mean, np.linalg.pinv(cov))
                                 except np.linalg.LinAlgError:
                                     print("{0:s} HAS A SINGULAR MATRIX: BREAKING OFF ITERATION...".format(rootname))
                                     break
